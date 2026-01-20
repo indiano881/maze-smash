@@ -22,9 +22,9 @@ interface Player {
   styles: [
     `
       canvas {
-        border: 3px solid #4a4e69;
-        border-radius: 8px;
-        background: #16213e;
+        border: 4px solid #2a1a0a;
+        border-radius: 4px;
+        box-shadow: 0 0 30px rgba(0, 0, 0, 0.8), inset 0 0 20px rgba(0, 0, 0, 0.5);
       }
     `,
   ],
@@ -42,12 +42,15 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   // Maze config
   private readonly MAZE_WIDTH = 15;
   private readonly MAZE_HEIGHT = 15;
-  private readonly CELL_SIZE = 35;
-  private readonly WALL_COLOR = '#4a4e69';
-  private readonly FLOOR_COLOR = '#16213e';
+  private readonly CELL_SIZE = 40;
+  private readonly WALL_THICKNESS = 8;
 
   // Fog of war
   private readonly VISION_RADIUS = 3;
+
+  // Stone texture cache
+  private stonePattern!: CanvasPattern | null;
+  private floorPattern!: CanvasPattern | null;
 
   private boundNewMazeHandler = this.generateNewMaze.bind(this);
 
@@ -61,11 +64,73 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     canvas.height = this.MAZE_HEIGHT * this.CELL_SIZE;
     this.ctx = canvas.getContext('2d')!;
 
+    this.createPatterns();
     this.generateNewMaze();
   }
 
   ngOnDestroy(): void {
     window.removeEventListener('newMaze', this.boundNewMazeHandler);
+  }
+
+  private createPatterns(): void {
+    // Create stone wall texture
+    const stoneCanvas = document.createElement('canvas');
+    stoneCanvas.width = 16;
+    stoneCanvas.height = 16;
+    const stoneCtx = stoneCanvas.getContext('2d')!;
+
+    // Base stone color
+    stoneCtx.fillStyle = '#4a4a4a';
+    stoneCtx.fillRect(0, 0, 16, 16);
+
+    // Add noise/grain for stone texture
+    for (let i = 0; i < 40; i++) {
+      const x = Math.random() * 16;
+      const y = Math.random() * 16;
+      const shade = Math.random() * 30 - 15;
+      stoneCtx.fillStyle = `rgb(${74 + shade}, ${74 + shade}, ${74 + shade})`;
+      stoneCtx.fillRect(x, y, 2, 2);
+    }
+
+    // Add mortar lines
+    stoneCtx.strokeStyle = '#2a2a2a';
+    stoneCtx.lineWidth = 1;
+    stoneCtx.beginPath();
+    stoneCtx.moveTo(0, 8);
+    stoneCtx.lineTo(16, 8);
+    stoneCtx.moveTo(8, 0);
+    stoneCtx.lineTo(8, 8);
+    stoneCtx.moveTo(0, 8);
+    stoneCtx.lineTo(0, 16);
+    stoneCtx.stroke();
+
+    this.stonePattern = this.ctx.createPattern(stoneCanvas, 'repeat');
+
+    // Create floor texture
+    const floorCanvas = document.createElement('canvas');
+    floorCanvas.width = 20;
+    floorCanvas.height = 20;
+    const floorCtx = floorCanvas.getContext('2d')!;
+
+    // Dark stone floor
+    floorCtx.fillStyle = '#1a1a1a';
+    floorCtx.fillRect(0, 0, 20, 20);
+
+    // Add subtle cracks and variation
+    for (let i = 0; i < 15; i++) {
+      const x = Math.random() * 20;
+      const y = Math.random() * 20;
+      const shade = Math.random() * 20 - 10;
+      floorCtx.fillStyle = `rgb(${26 + shade}, ${26 + shade}, ${28 + shade})`;
+      floorCtx.fillRect(x, y, 3, 3);
+    }
+
+    // Grid lines for floor tiles
+    floorCtx.strokeStyle = '#0a0a0a';
+    floorCtx.lineWidth = 1;
+    floorCtx.strokeRect(0, 0, 20, 20);
+
+    this.floorPattern = this.ctx.createPattern(floorCanvas, 'repeat');
   }
 
   generateNewMaze(): void {
@@ -126,14 +191,11 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private checkWinCondition(): void {
-    // Check if player reached the flag
     if (this.player.x === this.flag.x && this.player.y === this.flag.y) {
-      // For now just move flag off screen to indicate capture
       this.flag.x = -1;
       this.flag.y = -1;
     }
 
-    // Check if player reached exit with flag
     if (
       this.player.x === this.exit.x &&
       this.player.y === this.exit.y &&
@@ -148,23 +210,37 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private draw(): void {
     const ctx = this.ctx;
-    const cellSize = this.CELL_SIZE;
 
-    // Clear canvas
-    ctx.fillStyle = '#0a0a15';
+    // Clear with dark background
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    // Draw maze cells with fog of war
+    // Draw floor and walls with fog of war
     for (let y = 0; y < this.MAZE_HEIGHT; y++) {
       for (let x = 0; x < this.MAZE_WIDTH; x++) {
         const distance = Math.abs(x - this.player.x) + Math.abs(y - this.player.y);
         const isVisible = distance <= this.VISION_RADIUS;
         const visibility = isVisible
-          ? 1 - (distance / (this.VISION_RADIUS + 1)) * 0.5
+          ? 1 - (distance / (this.VISION_RADIUS + 1)) * 0.6
           : 0;
 
         if (visibility > 0) {
-          this.drawCell(x, y, visibility);
+          this.drawFloor(x, y, visibility);
+        }
+      }
+    }
+
+    // Draw walls on top (second pass for proper layering)
+    for (let y = 0; y < this.MAZE_HEIGHT; y++) {
+      for (let x = 0; x < this.MAZE_WIDTH; x++) {
+        const distance = Math.abs(x - this.player.x) + Math.abs(y - this.player.y);
+        const isVisible = distance <= this.VISION_RADIUS;
+        const visibility = isVisible
+          ? 1 - (distance / (this.VISION_RADIUS + 1)) * 0.6
+          : 0;
+
+        if (visibility > 0) {
+          this.drawWalls(x, y, visibility);
         }
       }
     }
@@ -187,51 +263,136 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.drawExit(this.exit.x, this.exit.y);
     }
 
+    // Draw torch light effect
+    this.drawTorchLight();
+
     // Draw player
     this.drawPlayer();
   }
 
-  private drawCell(x: number, y: number, visibility: number): void {
+  private drawFloor(x: number, y: number, visibility: number): void {
+    const ctx = this.ctx;
+    const cellSize = this.CELL_SIZE;
+    const px = x * cellSize;
+    const py = y * cellSize;
+    const wall = this.WALL_THICKNESS;
+
+    // Draw floor tile
+    ctx.globalAlpha = visibility;
+
+    if (this.floorPattern) {
+      ctx.fillStyle = this.floorPattern;
+    } else {
+      ctx.fillStyle = '#1a1a1a';
+    }
+    ctx.fillRect(px + wall/2, py + wall/2, cellSize - wall, cellSize - wall);
+
+    ctx.globalAlpha = 1;
+  }
+
+  private drawWalls(x: number, y: number, visibility: number): void {
     const ctx = this.ctx;
     const cellSize = this.CELL_SIZE;
     const cell = this.maze.cells[y][x];
     const px = x * cellSize;
     const py = y * cellSize;
+    const wall = this.WALL_THICKNESS;
 
-    // Floor with visibility fade
-    const floorBrightness = Math.floor(22 * visibility);
-    ctx.fillStyle = `rgb(${floorBrightness}, ${Math.floor(33 * visibility)}, ${Math.floor(62 * visibility)})`;
-    ctx.fillRect(px, py, cellSize, cellSize);
+    ctx.globalAlpha = visibility;
 
-    // Walls
-    const wallBrightness = Math.floor(74 * visibility);
-    ctx.strokeStyle = `rgb(${wallBrightness}, ${Math.floor(78 * visibility)}, ${Math.floor(105 * visibility)})`;
-    ctx.lineWidth = 3;
-
+    // Draw 3D stone walls
     if (cell.walls.top) {
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px + cellSize, py);
-      ctx.stroke();
-    }
-    if (cell.walls.right) {
-      ctx.beginPath();
-      ctx.moveTo(px + cellSize, py);
-      ctx.lineTo(px + cellSize, py + cellSize);
-      ctx.stroke();
+      this.draw3DWall(px, py, cellSize, wall, 'horizontal', visibility);
     }
     if (cell.walls.bottom) {
-      ctx.beginPath();
-      ctx.moveTo(px, py + cellSize);
-      ctx.lineTo(px + cellSize, py + cellSize);
-      ctx.stroke();
+      this.draw3DWall(px, py + cellSize - wall, cellSize, wall, 'horizontal', visibility);
     }
     if (cell.walls.left) {
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      ctx.lineTo(px, py + cellSize);
-      ctx.stroke();
+      this.draw3DWall(px, py, wall, cellSize, 'vertical', visibility);
     }
+    if (cell.walls.right) {
+      this.draw3DWall(px + cellSize - wall, py, wall, cellSize, 'vertical', visibility);
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  private draw3DWall(x: number, y: number, width: number, height: number, orientation: 'horizontal' | 'vertical', visibility: number): void {
+    const ctx = this.ctx;
+    const depth = 3;
+
+    // Main wall face with stone pattern
+    if (this.stonePattern) {
+      ctx.fillStyle = this.stonePattern;
+    } else {
+      ctx.fillStyle = '#4a4a4a';
+    }
+    ctx.fillRect(x, y, width, height);
+
+    // Top highlight (light from above)
+    ctx.fillStyle = `rgba(120, 120, 120, ${visibility * 0.7})`;
+    if (orientation === 'horizontal') {
+      ctx.fillRect(x, y, width, depth);
+    } else {
+      ctx.fillRect(x, y, depth, height);
+    }
+
+    // Bottom/right shadow (3D depth)
+    ctx.fillStyle = `rgba(0, 0, 0, ${visibility * 0.6})`;
+    if (orientation === 'horizontal') {
+      ctx.fillRect(x, y + height - depth, width, depth);
+    } else {
+      ctx.fillRect(x + width - depth, y, depth, height);
+    }
+
+    // Inner shadow for depth
+    ctx.fillStyle = `rgba(0, 0, 0, ${visibility * 0.3})`;
+    if (orientation === 'horizontal') {
+      ctx.fillRect(x + depth, y + depth, width - depth * 2, height - depth * 2);
+    } else {
+      ctx.fillRect(x + depth, y + depth, width - depth * 2, height - depth * 2);
+    }
+
+    // Stone block lines
+    ctx.strokeStyle = `rgba(30, 30, 30, ${visibility * 0.8})`;
+    ctx.lineWidth = 1;
+
+    if (orientation === 'horizontal' && width > 20) {
+      for (let i = 10; i < width; i += 12) {
+        ctx.beginPath();
+        ctx.moveTo(x + i, y);
+        ctx.lineTo(x + i, y + height);
+        ctx.stroke();
+      }
+    } else if (orientation === 'vertical' && height > 20) {
+      for (let i = 10; i < height; i += 12) {
+        ctx.beginPath();
+        ctx.moveTo(x, y + i);
+        ctx.lineTo(x + width, y + i);
+        ctx.stroke();
+      }
+    }
+  }
+
+  private drawTorchLight(): void {
+    const ctx = this.ctx;
+    const cellSize = this.CELL_SIZE;
+    const px = this.player.x * cellSize + cellSize / 2;
+    const py = this.player.y * cellSize + cellSize / 2;
+    const radius = cellSize * this.VISION_RADIUS;
+
+    // Flickering torch effect
+    const flicker = 0.9 + Math.random() * 0.1;
+
+    // Radial light gradient
+    const gradient = ctx.createRadialGradient(px, py, 0, px, py, radius * flicker);
+    gradient.addColorStop(0, 'rgba(255, 200, 100, 0.15)');
+    gradient.addColorStop(0.3, 'rgba(255, 150, 50, 0.08)');
+    gradient.addColorStop(0.7, 'rgba(255, 100, 0, 0.03)');
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
   }
 
   private drawPlayer(): void {
@@ -240,28 +401,40 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const px = this.player.x * cellSize + cellSize / 2;
     const py = this.player.y * cellSize + cellSize / 2;
 
-    // Glow effect
-    const gradient = ctx.createRadialGradient(px, py, 0, px, py, cellSize / 2);
-    gradient.addColorStop(0, this.player.color);
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
-    ctx.fillRect(
-      px - cellSize / 2,
-      py - cellSize / 2,
-      cellSize,
-      cellSize
-    );
-
-    // Player circle
-    ctx.fillStyle = this.player.color;
+    // Outer glow (torch light)
+    const glowGradient = ctx.createRadialGradient(px, py, 0, px, py, cellSize * 0.8);
+    glowGradient.addColorStop(0, 'rgba(255, 200, 100, 0.4)');
+    glowGradient.addColorStop(0.5, 'rgba(255, 150, 50, 0.2)');
+    glowGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = glowGradient;
     ctx.beginPath();
-    ctx.arc(px, py, cellSize / 3, 0, Math.PI * 2);
+    ctx.arc(px, py, cellSize * 0.8, 0, Math.PI * 2);
     ctx.fill();
 
-    // Inner highlight
-    ctx.fillStyle = '#ffffff';
+    // Player body (adventurer)
+    ctx.fillStyle = '#2d5a27';
     ctx.beginPath();
-    ctx.arc(px - 3, py - 3, cellSize / 8, 0, Math.PI * 2);
+    ctx.arc(px, py + 2, cellSize / 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Player head
+    ctx.fillStyle = '#e8c39e';
+    ctx.beginPath();
+    ctx.arc(px, py - 4, cellSize / 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Torch in hand
+    ctx.fillStyle = '#8b4513';
+    ctx.fillRect(px + 6, py - 8, 3, 12);
+
+    // Torch flame
+    const flameGradient = ctx.createRadialGradient(px + 7, py - 12, 0, px + 7, py - 10, 6);
+    flameGradient.addColorStop(0, '#ffff00');
+    flameGradient.addColorStop(0.3, '#ffa500');
+    flameGradient.addColorStop(1, '#ff4500');
+    ctx.fillStyle = flameGradient;
+    ctx.beginPath();
+    ctx.ellipse(px + 7, py - 12, 4, 6, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
@@ -271,20 +444,45 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const px = x * cellSize + cellSize / 2;
     const py = y * cellSize + cellSize / 2;
 
-    // Flag pole
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 2;
+    // Glowing pedestal
+    const pedestalGradient = ctx.createRadialGradient(px, py + 8, 0, px, py + 8, 15);
+    pedestalGradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
+    pedestalGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = pedestalGradient;
     ctx.beginPath();
-    ctx.moveTo(px - 5, py + 10);
-    ctx.lineTo(px - 5, py - 10);
+    ctx.arc(px, py + 8, 15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Stone pedestal
+    ctx.fillStyle = '#555';
+    ctx.fillRect(px - 8, py + 5, 16, 8);
+    ctx.fillStyle = '#666';
+    ctx.fillRect(px - 6, py + 3, 12, 4);
+
+    // Flag pole
+    ctx.strokeStyle = '#8b4513';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(px, py + 5);
+    ctx.lineTo(px, py - 12);
     ctx.stroke();
 
-    // Flag
-    ctx.fillStyle = '#ff4444';
+    // Flag cloth with wave effect
+    ctx.fillStyle = '#cc0000';
     ctx.beginPath();
-    ctx.moveTo(px - 5, py - 10);
-    ctx.lineTo(px + 10, py - 5);
-    ctx.lineTo(px - 5, py);
+    ctx.moveTo(px, py - 12);
+    ctx.quadraticCurveTo(px + 8, py - 10, px + 14, py - 8);
+    ctx.quadraticCurveTo(px + 8, py - 6, px + 12, py - 2);
+    ctx.lineTo(px, py - 2);
+    ctx.closePath();
+    ctx.fill();
+
+    // Flag highlight
+    ctx.fillStyle = '#ff3333';
+    ctx.beginPath();
+    ctx.moveTo(px, py - 12);
+    ctx.quadraticCurveTo(px + 5, py - 10, px + 10, py - 9);
+    ctx.lineTo(px, py - 8);
     ctx.closePath();
     ctx.fill();
   }
@@ -295,23 +493,45 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const px = x * cellSize + cellSize / 2;
     const py = y * cellSize + cellSize / 2;
 
-    // Exit glow
-    const gradient = ctx.createRadialGradient(px, py, 0, px, py, cellSize / 2);
-    gradient.addColorStop(0, 'rgba(255, 215, 0, 0.8)');
-    gradient.addColorStop(1, 'transparent');
-    ctx.fillStyle = gradient;
+    // Golden glow
+    const glowGradient = ctx.createRadialGradient(px, py, 0, px, py, cellSize * 0.7);
+    glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+    glowGradient.addColorStop(0.5, 'rgba(255, 180, 0, 0.2)');
+    glowGradient.addColorStop(1, 'transparent');
+    ctx.fillStyle = glowGradient;
     ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
 
-    // Exit symbol (door)
-    ctx.fillStyle = '#ffd700';
-    ctx.fillRect(px - 8, py - 10, 16, 20);
-    ctx.fillStyle = '#16213e';
-    ctx.fillRect(px - 5, py - 7, 10, 14);
+    // Stone archway
+    ctx.fillStyle = '#5a5a5a';
+    ctx.fillRect(px - 12, py - 14, 6, 28);
+    ctx.fillRect(px + 6, py - 14, 6, 28);
+    ctx.fillRect(px - 12, py - 16, 24, 6);
 
-    // Door handle
+    // Arch highlight
+    ctx.fillStyle = '#707070';
+    ctx.fillRect(px - 10, py - 14, 2, 26);
+    ctx.fillRect(px + 8, py - 14, 2, 26);
+    ctx.fillRect(px - 10, py - 14, 20, 2);
+
+    // Dark doorway
+    ctx.fillStyle = '#0a0a0a';
+    ctx.fillRect(px - 6, py - 10, 12, 22);
+
+    // Light coming through
+    const doorGradient = ctx.createLinearGradient(px - 6, py, px + 6, py);
+    doorGradient.addColorStop(0, 'rgba(255, 220, 150, 0.1)');
+    doorGradient.addColorStop(0.5, 'rgba(255, 220, 150, 0.3)');
+    doorGradient.addColorStop(1, 'rgba(255, 220, 150, 0.1)');
+    ctx.fillStyle = doorGradient;
+    ctx.fillRect(px - 6, py - 10, 12, 22);
+
+    // Stars/sparkle effect
     ctx.fillStyle = '#ffd700';
-    ctx.beginPath();
-    ctx.arc(px + 2, py, 2, 0, Math.PI * 2);
-    ctx.fill();
+    const sparkles = [[px - 2, py - 5], [px + 3, py], [px - 1, py + 5], [px + 2, py - 8]];
+    sparkles.forEach(([sx, sy]) => {
+      ctx.beginPath();
+      ctx.arc(sx, sy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 }
