@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx:*)",
+      "Bash(npm install)",
+      "Bash(npm --version:*)",
+      "Bash(node --version:*)",
+      "Bash(\"/c/Program Files/nodejs/npm\" install)",
+      "Bash(npm install:*)",
+      "Bash(tee:*)",
+      "Bash(cmd.exe /c \"cd C:\\\\Users\\\\ASUS\\\\Desktop\\\\angular\\\\game-project\\\\frontend && npm install\")",
+      "Bash(cmd.exe /c \"cd /d C:\\\\Users\\\\ASUS\\\\Desktop\\\\angular\\\\game-project\\\\frontend && npm install 2>&1\")",
+      "Bash(powershell.exe -Command \"Set-Location C:\\\\Users\\\\ASUS\\\\Desktop\\\\angular\\\\game-project\\\\frontend; npm install\")",
+      "Bash(node \"/c/Program Files/nodejs/node_modules/npm/bin/npm-cli.js\" install --prefix \"/c/Users/ASUS/Desktop/angular/game-project/frontend\")",
+      "Bash(timeout 60 node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ]
+  }
+}
