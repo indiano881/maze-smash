@@ -1,97 +1,80 @@
-# CLAUDE.md - AI Assistant Context
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
 
-This is **Labyrinth Duel**, a 1v1 real-time multiplayer game. The user is building this project to learn:
-- Angular (frontend)
-- Go (backend)
-- Terraform (infrastructure as code)
-- GCP (cloud deployment)
+**Labyrinth Duel** - A 1v1 real-time multiplayer maze game. Two players compete in a fog-of-war labyrinth to either capture a flag and escape, or eliminate their opponent.
+
+This is a learning project for: Angular, Go, Terraform, and GCP.
 
 ## Important Context
 
-- **User preference**: Provide commands for the user to run manually, don't execute bash commands directly
-- **Learning focus**: The user wants to understand what they're building, not just copy-paste
-- **Keep it simple**: Avoid over-engineering. Build incrementally.
+- **Provide commands for the user to run manually** - don't execute bash commands directly
+- **Learning focus** - explain what's being built, avoid copy-paste solutions
+- **Keep it simple** - avoid over-engineering, build incrementally
 
 ## Tech Stack
 
-- **Frontend**: Angular 18+ with HTML Canvas for game rendering
-- **Backend API**: Go with Gin framework
-- **WebSocket Server**: Go with gorilla/websocket
-- **Database**: Firestore
-- **Infrastructure**: Terraform deploying to GCP
-- **Containers**: Docker + Docker Compose
+| Layer | Technology |
+|-------|------------|
+| Frontend | Angular 18+ with HTML Canvas |
+| Backend API | Go + Gin framework |
+| Real-time | Go + gorilla/websocket |
+| Database | Firestore |
+| Infrastructure | Terraform on GCP |
 
-## Project Structure
+## Commands
 
-```
-game-project/
-├── frontend/           # Angular app
-│   └── src/app/
-│       ├── components/
-│       │   ├── home/       # Landing page
-│       │   ├── lobby/      # Waiting room
-│       │   └── game/       # Canvas game view
-│       └── services/
-│           ├── api.service.ts
-│           └── game.service.ts
-│
-├── backend/            # Go REST API
-│   ├── cmd/server/     # Entry point
-│   ├── internal/
-│   │   ├── handlers/   # HTTP handlers
-│   │   ├── models/     # Data models
-│   │   └── services/   # Business logic
-│   └── go.mod
-│
-├── websocket-server/   # Go WebSocket server
-│   ├── cmd/server/     # Entry point
-│   ├── internal/
-│   │   ├── game/       # Game logic
-│   │   ├── room/       # Room management
-│   │   └── ws/         # WebSocket handling
-│   └── go.mod
-│
-└── infrastructure/     # Terraform
-    ├── main.tf
-    ├── variables.tf
-    ├── outputs.tf
-    └── modules/
-        ├── cloud-run/
-        ├── compute/
-        └── storage/
+```bash
+# Frontend
+cd frontend && ng serve              # Dev server at localhost:4200
+cd frontend && ng build              # Production build
+cd frontend && ng test               # Run tests
+
+# Backend API
+cd backend && go run cmd/server/main.go     # Run server
+cd backend && go test ./...                 # Run all tests
+cd backend && go test ./internal/handlers   # Run specific package tests
+
+# WebSocket Server
+cd websocket-server && go run cmd/server/main.go
+cd websocket-server && go test ./...
+
+# Docker
+docker-compose up --build            # Start all services
+docker-compose down                  # Stop all services
+
+# Terraform
+cd infrastructure && terraform init
+cd infrastructure && terraform plan
+cd infrastructure && terraform apply
 ```
 
-## Game Mechanics
+## Architecture
 
-### Win Conditions
-1. Find the flag and escape through exit
-2. Kill your opponent
-
-### Features to Implement
-- Fog of war (player sees ~3 tiles around them)
-- Random maze generation
-- Flag spawns randomly
-- Combat when players meet
-- Free WASD movement
-
-## WebSocket Message Protocol
-
-```go
-// Client -> Server
-{"type": "join", "roomId": "xxx", "playerId": "xxx"}
-{"type": "move", "x": 100, "y": 200}
-{"type": "attack"}
-
-// Server -> Client
-{"type": "gameState", "players": [...], "flag": {...}}
-{"type": "playerJoined", "player": {...}}
-{"type": "playerLeft", "playerId": "xxx"}
-{"type": "gameOver", "winner": "xxx", "reason": "flag|kill"}
+### Service Communication
+```
+Browser <--HTTP--> Backend API (Gin)     <---> Firestore
+   |                    |
+   +---WebSocket----> WebSocket Server
+                    (game state @ 30 ticks/sec)
 ```
 
-## API Endpoints
+### WebSocket Protocol
+
+Client to Server:
+- `{"type": "join", "roomId": "xxx", "playerId": "xxx"}`
+- `{"type": "move", "x": 100, "y": 200}`
+- `{"type": "attack"}`
+
+Server to Client:
+- `{"type": "gameState", "players": [...], "flag": {...}}`
+- `{"type": "playerJoined", "player": {...}}`
+- `{"type": "playerLeft", "playerId": "xxx"}`
+- `{"type": "gameOver", "winner": "xxx", "reason": "flag|kill"}`
+
+### REST API Endpoints
 
 ```
 GET  /api/health          # Health check
@@ -100,24 +83,12 @@ POST /api/rooms           # Create new room
 POST /api/rooms/:id/join  # Join a room
 ```
 
-## Common Commands
+## Game Mechanics
 
-```bash
-# Frontend
-cd frontend && ng serve
-
-# Backend
-cd backend && go run cmd/server/main.go
-
-# WebSocket
-cd websocket-server && go run cmd/server/main.go
-
-# Docker
-docker-compose up --build
-
-# Terraform
-cd infrastructure && terraform init && terraform plan
-```
+- **Fog of war**: Player sees ~3 tiles around them
+- **Random maze generation** each match
+- **Win conditions**: Capture flag + escape through exit, or kill opponent
+- **Movement**: Free WASD movement
 
 ## Current Status
 
