@@ -41,38 +41,79 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   // Maze config
   private readonly MAZE_WIDTH = 9;
   private readonly MAZE_HEIGHT = 9;
-  private readonly TILE_WIDTH = 70;
-  private readonly TILE_HEIGHT = 35; // Half of width for isometric
-  private readonly WALL_HEIGHT = 25;
-  private readonly WALL_THICKNESS = 8;
+
+  // Dynamic tile sizes (calculated based on viewport)
+  private tileWidth = 70;
+  private tileHeight = 35;
+  private wallHeight = 25;
+  private wallThickness = 8;
+  private scale = 1;
 
   private boundNewMazeHandler = this.generateNewMaze.bind(this);
+  private boundResizeHandler = this.onResize.bind(this);
 
   ngOnInit(): void {
     window.addEventListener('newMaze', this.boundNewMazeHandler);
+    window.addEventListener('resize', this.boundResizeHandler);
   }
 
   ngAfterViewInit(): void {
-    const canvas = this.canvasRef.nativeElement;
-    // Canvas size needs to accommodate isometric projection
-    canvas.width = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (this.TILE_WIDTH / 2) + 50;
-    canvas.height = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (this.TILE_HEIGHT / 2) + this.WALL_HEIGHT + 100;
-    this.ctx = canvas.getContext('2d')!;
-
+    this.calculateSizes();
+    this.ctx = this.canvasRef.nativeElement.getContext('2d')!;
     this.generateNewMaze();
   }
 
   ngOnDestroy(): void {
     window.removeEventListener('newMaze', this.boundNewMazeHandler);
+    window.removeEventListener('resize', this.boundResizeHandler);
+  }
+
+  private calculateSizes(): void {
+    const canvas = this.canvasRef.nativeElement;
+    const viewportWidth = window.innerWidth * 0.9;
+    const viewportHeight = window.innerHeight * 0.8;
+
+    // Calculate tile width based on 90% viewport width
+    // Isometric width = (MAZE_WIDTH + MAZE_HEIGHT) * (tileWidth / 2)
+    const baseTileWidth = (viewportWidth - 50) / ((this.MAZE_WIDTH + this.MAZE_HEIGHT) / 2);
+
+    // Also check height constraint
+    const baseTileHeight = baseTileWidth / 2;
+    const neededHeight = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (baseTileHeight / 2) + 100;
+
+    // Use the smaller scale to fit both dimensions
+    if (neededHeight > viewportHeight) {
+      this.tileHeight = (viewportHeight - 100) / ((this.MAZE_WIDTH + this.MAZE_HEIGHT) / 2);
+      this.tileWidth = this.tileHeight * 2;
+    } else {
+      this.tileWidth = baseTileWidth;
+      this.tileHeight = baseTileHeight;
+    }
+
+    // Scale other elements proportionally
+    this.scale = this.tileWidth / 70; // 70 was the original tile width
+    this.wallHeight = 25 * this.scale;
+    this.wallThickness = 8 * this.scale;
+
+    // Set canvas size
+    canvas.width = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (this.tileWidth / 2) + 50;
+    canvas.height = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (this.tileHeight / 2) + this.wallHeight + 100;
+  }
+
+  private onResize(): void {
+    this.calculateSizes();
+    if (this.maze) {
+      this.draw();
+    }
   }
 
   // Convert grid coordinates to isometric screen coordinates
   private toIso(x: number, y: number): { sx: number; sy: number } {
     const offsetX = this.ctx.canvas.width / 2;
-    const offsetY = 60;
+    const offsetY = 60 * this.scale;
     return {
-      sx: (x - y) * (this.TILE_WIDTH / 2) + offsetX,
-      sy: (x + y) * (this.TILE_HEIGHT / 2) + offsetY,
+      sx: (x - y) * (this.tileWidth / 2) + offsetX,
+      sy: (x + y) * (this.tileHeight / 2) + offsetY,
     };
   }
 
@@ -209,8 +250,8 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private drawFloorTile(x: number, y: number, visibility: number): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(x, y);
-    const hw = this.TILE_WIDTH / 2;
-    const hh = this.TILE_HEIGHT / 2;
+    const hw = this.tileWidth / 2;
+    const hh = this.tileHeight / 2;
 
     ctx.globalAlpha = visibility;
 
@@ -279,10 +320,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private drawWall3D(x: number, y: number, side: 'top' | 'bottom' | 'left' | 'right', visibility: number): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(x, y);
-    const hw = this.TILE_WIDTH / 2;
-    const hh = this.TILE_HEIGHT / 2;
-    const wallH = this.WALL_HEIGHT;
-    const thick = this.WALL_THICKNESS;
+    const hw = this.tileWidth / 2;
+    const hh = this.tileHeight / 2;
+    const wallH = this.wallHeight;
+    const thick = this.wallThickness;
 
     // Colors for stone walls
     const stoneTop = `rgba(90, 90, 90, ${visibility})`;
@@ -440,12 +481,13 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   private addStoneTexture(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, visibility: number): void {
+    const s = this.scale;
     // Add stone block lines
     ctx.strokeStyle = `rgba(20, 20, 20, ${visibility * 0.5})`;
-    ctx.lineWidth = 1;
+    ctx.lineWidth = 1 * s;
 
     // Horizontal mortar lines
-    for (let i = 6; i < h; i += 8) {
+    for (let i = 6 * s; i < h; i += 8 * s) {
       ctx.beginPath();
       ctx.moveTo(x, y + i);
       ctx.lineTo(x + w, y + i);
@@ -454,7 +496,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Some vertical lines for brick pattern
     ctx.strokeStyle = `rgba(20, 20, 20, ${visibility * 0.3})`;
-    for (let i = 8; i < w; i += 15) {
+    for (let i = 8 * s; i < w; i += 15 * s) {
       ctx.beginPath();
       ctx.moveTo(x + i, y);
       ctx.lineTo(x + i, y + h);
@@ -465,7 +507,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private drawTorchLight(): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(this.player.x, this.player.y);
-    const radius = this.TILE_WIDTH * 2.5;
+    const radius = this.tileWidth * 2.5;
 
     const flicker = 0.9 + Math.random() * 0.1;
 
@@ -481,113 +523,115 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private drawPlayer(x: number, y: number): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(x, y);
+    const s = this.scale;
 
     // Shadow on floor
     ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.beginPath();
-    ctx.ellipse(sx, sy + 8, 16, 8, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, sy + 8 * s, 16 * s, 8 * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Body
     ctx.fillStyle = '#2d5a27';
     ctx.beginPath();
-    ctx.ellipse(sx, sy - 6, 14, 16, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, sy - 6 * s, 14 * s, 16 * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Body highlight
     ctx.fillStyle = '#3d7a37';
     ctx.beginPath();
-    ctx.ellipse(sx - 3, sy - 9, 7, 10, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx - 3 * s, sy - 9 * s, 7 * s, 10 * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Head
     ctx.fillStyle = '#e8c39e';
     ctx.beginPath();
-    ctx.arc(sx, sy - 26, 10, 0, Math.PI * 2);
+    ctx.arc(sx, sy - 26 * s, 10 * s, 0, Math.PI * 2);
     ctx.fill();
 
     // Hair
     ctx.fillStyle = '#4a3728';
     ctx.beginPath();
-    ctx.arc(sx, sy - 30, 8, Math.PI, 0);
+    ctx.arc(sx, sy - 30 * s, 8 * s, Math.PI, 0);
     ctx.fill();
 
     // Torch stick
     ctx.fillStyle = '#8b4513';
     ctx.save();
-    ctx.translate(sx + 16, sy - 18);
+    ctx.translate(sx + 16 * s, sy - 18 * s);
     ctx.rotate(-0.3);
-    ctx.fillRect(-2, -18, 5, 22);
+    ctx.fillRect(-2 * s, -18 * s, 5 * s, 22 * s);
     ctx.restore();
 
     // Torch flame
-    const flameX = sx + 18;
-    const flameY = sy - 40;
-    const flameGradient = ctx.createRadialGradient(flameX, flameY, 0, flameX, flameY, 14);
+    const flameX = sx + 18 * s;
+    const flameY = sy - 40 * s;
+    const flameGradient = ctx.createRadialGradient(flameX, flameY, 0, flameX, flameY, 14 * s);
     flameGradient.addColorStop(0, '#ffff88');
     flameGradient.addColorStop(0.3, '#ffaa00');
     flameGradient.addColorStop(0.7, '#ff4400');
     flameGradient.addColorStop(1, 'rgba(255, 50, 0, 0)');
     ctx.fillStyle = flameGradient;
     ctx.beginPath();
-    ctx.ellipse(flameX, flameY, 8 + Math.random() * 3, 14 + Math.random() * 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(flameX, flameY, (8 + Math.random() * 3) * s, (14 + Math.random() * 4) * s, 0, 0, Math.PI * 2);
     ctx.fill();
 
     // Flame glow
-    const glowGradient = ctx.createRadialGradient(flameX, flameY, 0, flameX, flameY, 40);
+    const glowGradient = ctx.createRadialGradient(flameX, flameY, 0, flameX, flameY, 40 * s);
     glowGradient.addColorStop(0, 'rgba(255, 200, 100, 0.3)');
     glowGradient.addColorStop(1, 'rgba(255, 150, 50, 0)');
     ctx.fillStyle = glowGradient;
     ctx.beginPath();
-    ctx.arc(flameX, flameY, 40, 0, Math.PI * 2);
+    ctx.arc(flameX, flameY, 40 * s, 0, Math.PI * 2);
     ctx.fill();
   }
 
   private drawFlag(x: number, y: number): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(x, y);
+    const s = this.scale;
 
     // Glow on floor
-    const glowGradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, 35);
+    const glowGradient = ctx.createRadialGradient(sx, sy, 0, sx, sy, 35 * s);
     glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.3)');
     glowGradient.addColorStop(1, 'transparent');
     ctx.fillStyle = glowGradient;
     ctx.beginPath();
-    ctx.arc(sx, sy, 35, 0, Math.PI * 2);
+    ctx.arc(sx, sy, 35 * s, 0, Math.PI * 2);
     ctx.fill();
 
     // Pedestal
     ctx.fillStyle = '#555';
     ctx.beginPath();
-    ctx.ellipse(sx, sy + 4, 14, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(sx, sy + 4 * s, 14 * s, 7 * s, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#666';
-    ctx.fillRect(sx - 10, sy - 6, 20, 12);
+    ctx.fillRect(sx - 10 * s, sy - 6 * s, 20 * s, 12 * s);
 
     // Pole
     ctx.strokeStyle = '#8b4513';
-    ctx.lineWidth = 4;
+    ctx.lineWidth = 4 * s;
     ctx.beginPath();
-    ctx.moveTo(sx, sy - 6);
-    ctx.lineTo(sx, sy - 45);
+    ctx.moveTo(sx, sy - 6 * s);
+    ctx.lineTo(sx, sy - 45 * s);
     ctx.stroke();
 
     // Flag cloth
     ctx.fillStyle = '#cc0000';
     ctx.beginPath();
-    ctx.moveTo(sx, sy - 45);
-    ctx.quadraticCurveTo(sx + 16, sy - 38, sx + 24, sy - 35);
-    ctx.quadraticCurveTo(sx + 14, sy - 28, sx + 22, sy - 22);
-    ctx.lineTo(sx, sy - 22);
+    ctx.moveTo(sx, sy - 45 * s);
+    ctx.quadraticCurveTo(sx + 16 * s, sy - 38 * s, sx + 24 * s, sy - 35 * s);
+    ctx.quadraticCurveTo(sx + 14 * s, sy - 28 * s, sx + 22 * s, sy - 22 * s);
+    ctx.lineTo(sx, sy - 22 * s);
     ctx.closePath();
     ctx.fill();
 
     // Flag highlight
     ctx.fillStyle = '#ff4444';
     ctx.beginPath();
-    ctx.moveTo(sx, sy - 45);
-    ctx.quadraticCurveTo(sx + 10, sy - 40, sx + 16, sy - 38);
-    ctx.lineTo(sx, sy - 35);
+    ctx.moveTo(sx, sy - 45 * s);
+    ctx.quadraticCurveTo(sx + 10 * s, sy - 40 * s, sx + 16 * s, sy - 38 * s);
+    ctx.lineTo(sx, sy - 35 * s);
     ctx.closePath();
     ctx.fill();
   }
@@ -595,50 +639,51 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private drawExit(x: number, y: number): void {
     const ctx = this.ctx;
     const { sx, sy } = this.toIso(x, y);
+    const s = this.scale;
 
     // Golden glow
-    const glowGradient = ctx.createRadialGradient(sx, sy - 20, 0, sx, sy - 20, 55);
+    const glowGradient = ctx.createRadialGradient(sx, sy - 20 * s, 0, sx, sy - 20 * s, 55 * s);
     glowGradient.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
     glowGradient.addColorStop(0.5, 'rgba(255, 180, 0, 0.2)');
     glowGradient.addColorStop(1, 'transparent');
     ctx.fillStyle = glowGradient;
     ctx.beginPath();
-    ctx.arc(sx, sy - 20, 55, 0, Math.PI * 2);
+    ctx.arc(sx, sy - 20 * s, 55 * s, 0, Math.PI * 2);
     ctx.fill();
 
     // Stone archway - back
     ctx.fillStyle = '#4a4a4a';
-    ctx.fillRect(sx - 20, sy - 55, 10, 60);
-    ctx.fillRect(sx + 10, sy - 55, 10, 60);
+    ctx.fillRect(sx - 20 * s, sy - 55 * s, 10 * s, 60 * s);
+    ctx.fillRect(sx + 10 * s, sy - 55 * s, 10 * s, 60 * s);
 
     // Arch top
     ctx.beginPath();
-    ctx.arc(sx, sy - 55, 20, Math.PI, 0);
+    ctx.arc(sx, sy - 55 * s, 20 * s, Math.PI, 0);
     ctx.fillStyle = '#4a4a4a';
     ctx.fill();
 
     // Archway highlight
     ctx.fillStyle = '#5a5a5a';
-    ctx.fillRect(sx - 18, sy - 52, 4, 54);
-    ctx.fillRect(sx + 14, sy - 52, 4, 54);
+    ctx.fillRect(sx - 18 * s, sy - 52 * s, 4 * s, 54 * s);
+    ctx.fillRect(sx + 14 * s, sy - 52 * s, 4 * s, 54 * s);
 
     // Dark opening
     ctx.fillStyle = '#0a0505';
-    ctx.fillRect(sx - 11, sy - 50, 22, 52);
+    ctx.fillRect(sx - 11 * s, sy - 50 * s, 22 * s, 52 * s);
 
     // Light from doorway
-    const doorGradient = ctx.createLinearGradient(sx - 11, sy - 25, sx + 11, sy - 25);
+    const doorGradient = ctx.createLinearGradient(sx - 11 * s, sy - 25 * s, sx + 11 * s, sy - 25 * s);
     doorGradient.addColorStop(0, 'rgba(255, 220, 150, 0.1)');
     doorGradient.addColorStop(0.5, 'rgba(255, 220, 150, 0.25)');
     doorGradient.addColorStop(1, 'rgba(255, 220, 150, 0.1)');
     ctx.fillStyle = doorGradient;
-    ctx.fillRect(sx - 11, sy - 50, 22, 52);
+    ctx.fillRect(sx - 11 * s, sy - 50 * s, 22 * s, 52 * s);
 
     // Sparkles
     ctx.fillStyle = '#ffd700';
-    [[sx - 4, sy - 35], [sx + 5, sy - 20], [sx, sy - 42], [sx + 3, sy - 10]].forEach(([px, py]) => {
+    [[sx - 4 * s, sy - 35 * s], [sx + 5 * s, sy - 20 * s], [sx, sy - 42 * s], [sx + 3 * s, sy - 10 * s]].forEach(([px, py]) => {
       ctx.beginPath();
-      ctx.arc(px, py, 2 + Math.random(), 0, Math.PI * 2);
+      ctx.arc(px, py, (2 + Math.random()) * s, 0, Math.PI * 2);
       ctx.fill();
     });
   }

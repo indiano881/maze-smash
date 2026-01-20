@@ -18,6 +18,8 @@ import { GameComponent } from './game/game.component';
   styles: [`
     .container {
       text-align: center;
+      width: 100%;
+      max-width: 100vw;
     }
     h1 {
       color: #eee;
