@@ -7,7 +7,7 @@ import {
   AfterViewInit,
   HostListener,
 } from '@angular/core';
-import { Application, Container, Graphics } from 'pixi.js';
+import { Application, Container, Graphics, Sprite, Assets } from 'pixi.js';
 import { Maze } from './maze';
 
 // Garden Theme Colors
@@ -52,6 +52,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private app!: Application;
   private gameContainer!: Container;
+  private backgroundSprite!: Sprite;   // Background image
   private hudContainer!: Container;    // HUD overlay (fixed position)
   private hudFace!: Graphics;          // Character face circle
   private hudSlot1!: Graphics;         // Inventory slot 1 (hammer)
@@ -142,6 +143,11 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     });
 
     this.containerRef.nativeElement.appendChild(this.app.canvas);
+
+    // Load and add background image
+    const bgTexture = await Assets.load('assets/static/background.png');
+    this.backgroundSprite = new Sprite(bgTexture);
+    this.app.stage.addChild(this.backgroundSprite);
 
     this.gameContainer = new Container();
     this.gameContainer.sortableChildren = true;
@@ -273,6 +279,16 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const canvasHeight = (this.MAZE_WIDTH + this.MAZE_HEIGHT) * (this.tileHeight / 2) + this.wallHeight + 150;
 
     this.app.renderer.resize(canvasWidth, canvasHeight);
+
+    // Scale background to fill canvas
+    if (this.backgroundSprite?.texture) {
+      const scaleX = canvasWidth / this.backgroundSprite.texture.width;
+      const scaleY = canvasHeight / this.backgroundSprite.texture.height;
+      const scale = Math.max(scaleX, scaleY);
+      this.backgroundSprite.scale.set(scale);
+      this.backgroundSprite.x = (canvasWidth - this.backgroundSprite.texture.width * scale) / 2;
+      this.backgroundSprite.y = (canvasHeight - this.backgroundSprite.texture.height * scale) / 2;
+    }
 
     // Center the game container
     this.gameContainer.x = canvasWidth / 2;
