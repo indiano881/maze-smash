@@ -285,11 +285,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const hh = this.tileHeight / 2;
     const wh = this.wallHeight;
 
-    // Top wall (blocks Y-1 movement) - NE edge (from top corner to right corner)
+    // Top wall (blocks Y-1 movement) - NE edge - at back of cell
     if (cell.walls.top === true) {
       const wall = new Graphics();
       const capRadius = wh * 0.4;
-      // Front face with rounded ends
       wall.moveTo(capRadius * 0.5, -hh - capRadius * 0.25);
       wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
       wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
@@ -298,15 +297,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = this.getDepth(gridX, gridY, 'frontWall');
+      wall.zIndex = (gridX + gridY) * 100 - 25; // Behind player at same cell
       this.gameContainer.addChild(wall);
     }
 
-    // Left wall (blocks X-1 movement) - NW edge (from left corner to top corner)
+    // Left wall (blocks X-1 movement) - NW edge - at back of cell
     if (cell.walls.left) {
       const wall = new Graphics();
       const capRadius = wh * 0.4;
-      // Front face with rounded ends
       wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
       wall.lineTo(-capRadius * 0.5, -hh - capRadius * 0.25);
       wall.quadraticCurveTo(capRadius * 0.3, -hh - wh * 0.5, -capRadius * 0.5, -hh - wh + capRadius * 0.25);
@@ -315,15 +313,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = this.getDepth(gridX, gridY, 'backWall');
+      wall.zIndex = (gridX + gridY) * 100 - 25; // Behind player at same cell
       this.gameContainer.addChild(wall);
     }
 
-    // Bottom wall (blocks Y+1 movement) - SW edge (from left corner to bottom corner)
+    // Bottom wall (blocks Y+1 movement) - SW edge - at front of cell
     if (cell.walls.bottom) {
       const wall = new Graphics();
       const capRadius = wh * 0.4;
-      // Front face with rounded ends
       wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
       wall.lineTo(-capRadius * 0.5, hh - capRadius * 0.25);
       wall.quadraticCurveTo(capRadius * 0.3, hh - wh * 0.5, -capRadius * 0.5, hh - wh + capRadius * 0.25);
@@ -332,15 +329,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = this.getDepth(gridX, gridY, 'backWall');
+      wall.zIndex = (gridX + gridY) * 100 + 75; // In front of player at same cell
       this.gameContainer.addChild(wall);
     }
 
-    // Right wall (blocks X+1 movement) - SE edge (from bottom corner to right corner)
+    // Right wall (blocks X+1 movement) - SE edge - at front of cell
     if (cell.walls.right) {
       const wall = new Graphics();
       const capRadius = wh * 0.4;
-      // Front face with rounded ends
       wall.moveTo(capRadius * 0.5, hh - capRadius * 0.25);
       wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
       wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
@@ -349,7 +345,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = this.getDepth(gridX, gridY, 'frontWall');
+      wall.zIndex = (gridX + gridY) * 100 + 75; // In front of player at same cell
       this.gameContainer.addChild(wall);
     }
 
