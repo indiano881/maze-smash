@@ -33,7 +33,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private hudFace!: Graphics;          // Character face circle
   private hudSlot1!: Graphics;         // Inventory slot 1 (hammer)
   private hudSlot2!: Graphics;         // Inventory slot 2 (cloak/invisibility)
+  private hudSlot3!: Graphics;         // Inventory slot 3 (big torch)
   private staticContainer!: Container; // Floor, walls, exit - only redraws on maze change
+  private fogContainer!: Container;    // Fog of war overlay
   private playerGraphics!: Graphics;   // Player sprite - just moves, no recreate
   private flagGraphics!: Graphics;     // Flag sprite
   private hammerGraphics!: Graphics;   // Hammer pickup sprite
@@ -42,6 +44,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private cloakGraphics!: Graphics;    // Cloak pickup sprite
   private cloakSparkles: Graphics[] = []; // Cloak magic sparkles
   private cloakSparkleOffsets: number[] = []; // Y offsets for cloak sparkles
+  private bigTorchGraphics!: Graphics; // Big torch pickup sprite
+  private bigTorchSparkles: Graphics[] = []; // Big torch magic sparkles
+  private bigTorchSparkleOffsets: number[] = []; // Y offsets for big torch sparkles
   private maze!: Maze;
   private player = { x: 0, y: 0, hasHammer: false };
   private playerVisual = { x: 0, y: 0 }; // Animated position
@@ -51,7 +56,13 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private hammer = { x: 0, y: 0, pickedUp: false };
   private cloak = { x: 0, y: 0, pickedUp: false };
   private invisibility = { active: false, endTime: 0 };
+  private bigTorch = { x: 0, y: 0, pickedUp: false };
+  private torchPower = { active: false, endTime: 0 };
   private exit = { x: 0, y: 0 };
+
+  // Fog of war settings
+  private readonly BASE_VISIBILITY = 5;     // Default view radius (tiles)
+  private readonly TORCH_VISIBILITY = 10;   // Expanded view radius with big torch (full maze)
   private readonly MOVE_SPEED = 0.15; // Lerp factor (0-1, higher = faster)
 
   // Maze config
@@ -143,6 +154,25 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.staticContainer.addChild(sparkle);
     }
 
+    // Big torch graphics - must be in staticContainer for z-sorting with walls
+    this.bigTorchGraphics = new Graphics();
+    this.staticContainer.addChild(this.bigTorchGraphics);
+
+    // Big torch sparkles (orange/yellow magic particles)
+    for (let i = 0; i < 5; i++) {
+      const sparkle = new Graphics();
+      sparkle.circle(0, 0, 3);
+      sparkle.fill({ color: 0xffaa00, alpha: 0.9 });
+      this.bigTorchSparkles.push(sparkle);
+      this.bigTorchSparkleOffsets.push(Math.random() * 40);
+      this.staticContainer.addChild(sparkle);
+    }
+
+    // Fog of war container (drawn on top of everything except HUD)
+    this.fogContainer = new Container();
+    this.fogContainer.sortableChildren = true;
+    this.gameContainer.addChild(this.fogContainer);
+
     // HUD container (fixed position, not affected by game camera)
     this.hudContainer = new Container();
     this.hudContainer.x = 20;
@@ -160,6 +190,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Inventory slot 2 (cloak/invisibility)
     this.hudSlot2 = new Graphics();
     this.hudContainer.addChild(this.hudSlot2);
+
+    // Inventory slot 3 (big torch)
+    this.hudSlot3 = new Graphics();
+    this.hudContainer.addChild(this.hudSlot3);
 
     this.drawHUD();
   }
@@ -241,8 +275,17 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Animate cloak sparkles
       this.animateCloakSparkles();
 
+      // Animate big torch sparkles
+      this.animateBigTorchSparkles();
+
       // Check invisibility timer
       this.updateInvisibility();
+
+      // Check torch power timer
+      this.updateTorchPower();
+
+      // Update fog of war
+      this.updateFog();
     });
   }
 
@@ -308,6 +351,37 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private animateBigTorchSparkles(): void {
+    if (this.bigTorch.pickedUp) {
+      // Hide all sparkles when big torch is picked up
+      this.bigTorchSparkles.forEach(s => s.visible = false);
+      return;
+    }
+
+    const { x, y } = this.toIso(this.bigTorch.x, this.bigTorch.y);
+    const scale = this.tileWidth / 80;
+    const xOffsets = [-8, -3, 2, 7, 12]; // Horizontal spread
+
+    this.bigTorchSparkles.forEach((sparkle, i) => {
+      // Move sparkle upward
+      this.bigTorchSparkleOffsets[i] += 0.6;
+
+      // Reset to bottom when reaching top
+      if (this.bigTorchSparkleOffsets[i] > 55) {
+        this.bigTorchSparkleOffsets[i] = 0;
+      }
+
+      // Position sparkle
+      sparkle.x = x + xOffsets[i] * scale;
+      sparkle.y = y - this.bigTorchSparkleOffsets[i] * scale - 20 * scale;
+      sparkle.zIndex = (this.bigTorch.x + this.bigTorch.y) * 100 + 25;
+      sparkle.visible = true;
+
+      // Fade based on position (fade out at top)
+      sparkle.alpha = 1 - (this.bigTorchSparkleOffsets[i] / 55) * 0.6;
+    });
+  }
+
   private updateInvisibility(): void {
     if (this.invisibility.active && Date.now() >= this.invisibility.endTime) {
       // Invisibility expired
@@ -335,6 +409,69 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     } else {
       this.playerGraphics.alpha = 1;
     }
+  }
+
+  private updateTorchPower(): void {
+    if (this.torchPower.active && Date.now() >= this.torchPower.endTime) {
+      // Torch power expired
+      this.torchPower.active = false;
+      this.updateHUD();
+    }
+
+    // Update HUD timer display while torch is active
+    if (this.torchPower.active) {
+      this.updateHUD();
+    }
+  }
+
+  private updateFog(): void {
+    // Clear previous fog
+    while (this.fogContainer.children.length > 0) {
+      const child = this.fogContainer.children[0];
+      this.fogContainer.removeChild(child);
+      child.destroy();
+    }
+
+    const visibility = this.torchPower.active ? this.TORCH_VISIBILITY : this.BASE_VISIBILITY;
+    const playerX = Math.round(this.playerVisual.x);
+    const playerY = Math.round(this.playerVisual.y);
+
+    // Draw fog for each cell outside visibility
+    for (let y = 0; y < this.MAZE_HEIGHT; y++) {
+      for (let x = 0; x < this.MAZE_WIDTH; x++) {
+        const distance = Math.abs(x - playerX) + Math.abs(y - playerY); // Manhattan distance
+
+        if (distance > visibility) {
+          // Fully fogged
+          this.drawFogTile(x, y, 0.9);
+        } else if (distance > visibility - 1) {
+          // Partial fog (edge of visibility)
+          this.drawFogTile(x, y, 0.5);
+        }
+      }
+    }
+  }
+
+  private drawFogTile(gridX: number, gridY: number, alpha: number): void {
+    const { x, y } = this.toIso(gridX, gridY);
+    const hw = this.tileWidth / 2;
+    const hh = this.tileHeight / 2;
+
+    const fog = new Graphics();
+    fog.poly([
+      { x: 0, y: -hh - this.wallHeight },
+      { x: hw, y: -this.wallHeight },
+      { x: hw, y: hh },
+      { x: 0, y: hh + hh },
+      { x: -hw, y: hh },
+      { x: -hw, y: -this.wallHeight },
+    ]);
+    fog.fill({ color: 0x000000, alpha });
+
+    fog.x = x;
+    fog.y = y;
+    fog.zIndex = (gridX + gridY) * 100 + 99; // Draw on top of everything in that cell
+    this.fogContainer.addChild(fog);
   }
 
   generateNewMaze(): void {
@@ -384,8 +521,26 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.cloak.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
     }
 
-    // Reset invisibility
+    // Initialize big torch position
+    this.bigTorch = {
+      x: Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1,
+      y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1,
+      pickedUp: false
+    };
+
+    // Ensure big torch isn't at flag, exit, start, hammer, or cloak
+    while ((this.bigTorch.x === this.flag.x && this.bigTorch.y === this.flag.y) ||
+           (this.bigTorch.x === this.exit.x && this.bigTorch.y === this.exit.y) ||
+           (this.bigTorch.x === this.hammer.x && this.bigTorch.y === this.hammer.y) ||
+           (this.bigTorch.x === this.cloak.x && this.bigTorch.y === this.cloak.y) ||
+           (this.bigTorch.x === 0 && this.bigTorch.y === 0)) {
+      this.bigTorch.x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+      this.bigTorch.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+    }
+
+    // Reset invisibility and torch power
     this.invisibility = { active: false, endTime: 0 };
+    this.torchPower = { active: false, endTime: 0 };
 
     // Reset sparkle positions
     for (let i = 0; i < this.sparkleOffsets.length; i++) {
@@ -394,6 +549,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     for (let i = 0; i < this.cloakSparkleOffsets.length; i++) {
       this.cloakSparkleOffsets[i] = Math.random() * 40;
     }
+    for (let i = 0; i < this.bigTorchSparkleOffsets.length; i++) {
+      this.bigTorchSparkleOffsets[i] = Math.random() * 40;
+    }
 
     this.initPlayerGraphics();
     this.drawMaze();
@@ -401,6 +559,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.updateFlagVisibility();
     this.updateHammerVisibility();
     this.updateCloakVisibility();
+    this.updateBigTorchVisibility();
     if (this.hudSlot1) this.updateHUD(); // Update HUD if initialized
   }
 
@@ -472,6 +631,15 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.invisibility.endTime = Date.now() + 10000; // 10 seconds
       this.updateCloakVisibility();
       this.initPlayerGraphics(); // Redraw player with invisibility effect
+      this.updateHUD();
+    }
+
+    // Check big torch pickup
+    if (!this.bigTorch.pickedUp && this.player.x === this.bigTorch.x && this.player.y === this.bigTorch.y) {
+      this.bigTorch.pickedUp = true;
+      this.torchPower.active = true;
+      this.torchPower.endTime = Date.now() + 10000; // 10 seconds expanded vision
+      this.updateBigTorchVisibility();
       this.updateHUD();
     }
 
@@ -568,8 +736,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.flagGraphics,
       this.hammerGraphics,
       this.cloakGraphics,
+      this.bigTorchGraphics,
       ...this.hammerSparkles,
-      ...this.cloakSparkles
+      ...this.cloakSparkles,
+      ...this.bigTorchSparkles
     ]);
 
     while (this.staticContainer.children.length > 0) {
@@ -605,17 +775,22 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.staticContainer.addChild(this.flagGraphics);
     this.staticContainer.addChild(this.hammerGraphics);
     this.staticContainer.addChild(this.cloakGraphics);
+    this.staticContainer.addChild(this.bigTorchGraphics);
     for (const sparkle of this.hammerSparkles) {
       this.staticContainer.addChild(sparkle);
     }
     for (const sparkle of this.cloakSparkles) {
       this.staticContainer.addChild(sparkle);
     }
+    for (const sparkle of this.bigTorchSparkles) {
+      this.staticContainer.addChild(sparkle);
+    }
 
-    // Draw flag, hammer, and cloak
+    // Draw flag, hammer, cloak, and big torch
     this.drawFlagGraphics();
     this.drawHammerGraphics();
     this.drawCloakGraphics();
+    this.drawBigTorchGraphics();
   }
 
   // Update player position (called every animation frame - no object recreation)
@@ -750,6 +925,54 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cloakGraphics.y = y;
     this.cloakGraphics.zIndex = (this.cloak.x + this.cloak.y) * 100 + 20;
     this.cloakGraphics.visible = !this.cloak.pickedUp;
+  }
+
+  // Update big torch visibility
+  private updateBigTorchVisibility(): void {
+    this.bigTorchGraphics.visible = !this.bigTorch.pickedUp;
+  }
+
+  // Draw big torch graphics (floating larger torch pickup)
+  private drawBigTorchGraphics(): void {
+    const { x, y } = this.toIso(this.bigTorch.x, this.bigTorch.y);
+    const scale = this.tileWidth / 80;
+
+    this.bigTorchGraphics.clear();
+
+    // Warm orange/yellow magical glow
+    this.bigTorchGraphics.circle(0, -25 * scale, 28 * scale);
+    this.bigTorchGraphics.fill({ color: 0xff8800, alpha: 0.3 });
+
+    // Large torch handle (wooden, thick)
+    this.bigTorchGraphics.roundRect(-4 * scale, -30 * scale, 8 * scale, 35 * scale, 3 * scale);
+    this.bigTorchGraphics.fill({ color: 0x6b3a1a });
+
+    // Handle wrap (decorative bands)
+    this.bigTorchGraphics.roundRect(-5 * scale, -10 * scale, 10 * scale, 4 * scale, 2 * scale);
+    this.bigTorchGraphics.fill({ color: 0x8b5a2b });
+    this.bigTorchGraphics.roundRect(-5 * scale, -20 * scale, 10 * scale, 4 * scale, 2 * scale);
+    this.bigTorchGraphics.fill({ color: 0x8b5a2b });
+
+    // Torch head (metal bracket)
+    this.bigTorchGraphics.roundRect(-8 * scale, -38 * scale, 16 * scale, 10 * scale, 3 * scale);
+    this.bigTorchGraphics.fill({ color: 0x555555 });
+
+    // Large flame (outer - orange)
+    this.bigTorchGraphics.ellipse(0, -50 * scale, 12 * scale, 18 * scale);
+    this.bigTorchGraphics.fill({ color: 0xff6600 });
+
+    // Medium flame (yellow)
+    this.bigTorchGraphics.ellipse(0, -52 * scale, 8 * scale, 14 * scale);
+    this.bigTorchGraphics.fill({ color: 0xffaa00 });
+
+    // Inner flame (bright yellow/white)
+    this.bigTorchGraphics.ellipse(0, -54 * scale, 4 * scale, 10 * scale);
+    this.bigTorchGraphics.fill({ color: 0xffdd44 });
+
+    this.bigTorchGraphics.x = x;
+    this.bigTorchGraphics.y = y;
+    this.bigTorchGraphics.zIndex = (this.bigTorch.x + this.bigTorch.y) * 100 + 20;
+    this.bigTorchGraphics.visible = !this.bigTorch.pickedUp;
   }
 
   // Create player graphics with directional face
@@ -1109,6 +1332,15 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hudSlot2.fill({ color: 0x2a2a2a });
     this.hudSlot2.stroke({ color: 0x4a4a4a, width: 2 });
 
+    // Inventory slot 3 (big torch)
+    this.hudSlot3.clear();
+    this.hudSlot3.x = faceRadius * 2 + spacing + (slotRadius * 2 + spacing) * 2;
+    this.hudSlot3.y = faceRadius - slotRadius;
+    // Slot background
+    this.hudSlot3.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot3.fill({ color: 0x2a2a2a });
+    this.hudSlot3.stroke({ color: 0x4a4a4a, width: 2 });
+
     this.updateHUD();
   }
 
@@ -1150,6 +1382,32 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hudSlot2.quadraticCurveTo(slotRadius, slotRadius + 8, slotRadius + 5, slotRadius + 6);
       this.hudSlot2.quadraticCurveTo(slotRadius + 6, slotRadius - 4, slotRadius, slotRadius - 8);
       this.hudSlot2.fill({ color: 0x8844cc });
+    }
+
+    // Update slot 3 (big torch/extended vision)
+    this.hudSlot3.clear();
+    this.hudSlot3.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot3.fill({ color: 0x2a2a2a });
+    this.hudSlot3.stroke({ color: this.torchPower.active ? 0xffaa00 : 0x4a4a4a, width: 2 });
+
+    if (this.torchPower.active) {
+      // Draw mini torch icon with timer indication
+      const timeLeft = Math.max(0, this.torchPower.endTime - Date.now());
+      const progress = timeLeft / 10000; // 0 to 1
+
+      // Orange glow based on time remaining
+      this.hudSlot3.circle(slotRadius, slotRadius, slotRadius - 3);
+      this.hudSlot3.fill({ color: 0xff6600, alpha: progress * 0.5 });
+
+      // Torch handle
+      this.hudSlot3.roundRect(slotRadius - 2, slotRadius - 4, 4, 12, 1);
+      this.hudSlot3.fill({ color: 0x6b3a1a });
+
+      // Flame
+      this.hudSlot3.ellipse(slotRadius, slotRadius - 8, 5, 7);
+      this.hudSlot3.fill({ color: 0xff6600 });
+      this.hudSlot3.ellipse(slotRadius, slotRadius - 9, 3, 5);
+      this.hudSlot3.fill({ color: 0xffaa00 });
     }
   }
 }
