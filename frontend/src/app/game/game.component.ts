@@ -443,8 +443,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     event.preventDefault();
 
-    if (direction) {
+    if (direction && direction !== this.playerDirection) {
       this.playerDirection = direction;
+      this.initPlayerGraphics(); // Redraw player to show new direction
     }
 
     if (this.maze.canMove(this.player.x, this.player.y, newX, newY)) {
@@ -751,7 +752,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.cloakGraphics.visible = !this.cloak.pickedUp;
   }
 
-  // Create player graphics (only once)
+  // Create player graphics with directional face
   private initPlayerGraphics(): void {
     const scale = this.tileWidth / 80;
 
@@ -765,9 +766,80 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.playerGraphics.ellipse(0, -10 * scale, 12 * scale, 16 * scale);
     this.playerGraphics.fill({ color: 0x2d5a27 });
 
-    // Head
+    // Head (base skin color)
     this.playerGraphics.circle(0, -30 * scale, 10 * scale);
     this.playerGraphics.fill({ color: 0xe8c39e });
+
+    // Hair/back of head (dark color) - shown on opposite side of face
+    const hairOffsetX = this.playerDirection === 'left' ? 3 : this.playerDirection === 'right' ? -3 : 0;
+    const hairOffsetY = this.playerDirection === 'up' ? 2 : this.playerDirection === 'down' ? -3 : -1;
+    this.playerGraphics.circle(hairOffsetX * scale, (-30 + hairOffsetY) * scale, 8 * scale);
+    this.playerGraphics.fill({ color: 0x4a3728 });
+
+    // Face area (lighter skin) - positioned based on direction
+    let faceOffsetX = 0;
+    let faceOffsetY = 0;
+    switch (this.playerDirection) {
+      case 'down': faceOffsetY = 2; break;
+      case 'up': faceOffsetY = -3; break;
+      case 'left': faceOffsetX = -4; break;
+      case 'right': faceOffsetX = 4; break;
+    }
+    this.playerGraphics.circle(faceOffsetX * scale, (-30 + faceOffsetY) * scale, 7 * scale);
+    this.playerGraphics.fill({ color: 0xe8c39e });
+
+    // Eyes - positioned based on direction
+    let eye1X = -3, eye1Y = -31;
+    let eye2X = 3, eye2Y = -31;
+    switch (this.playerDirection) {
+      case 'down':
+        // Front view: eyes side by side
+        eye1X = -3; eye2X = 3;
+        eye1Y = eye2Y = -28;
+        break;
+      case 'up':
+        // Back view: no eyes visible
+        break;
+      case 'left':
+        // Side view: eyes stacked vertically on left side
+        eye1X = eye2X = -5;
+        eye1Y = -32; eye2Y = -28;
+        break;
+      case 'right':
+        // Side view: eyes stacked vertically on right side
+        eye1X = eye2X = 5;
+        eye1Y = -32; eye2Y = -28;
+        break;
+    }
+    // Draw eyes (only visible when not facing away)
+    if (this.playerDirection !== 'up') {
+      this.playerGraphics.circle(eye1X * scale, eye1Y * scale, 2 * scale);
+      this.playerGraphics.fill({ color: 0x2a2a2a });
+      this.playerGraphics.circle(eye2X * scale, eye2Y * scale, 2 * scale);
+      this.playerGraphics.fill({ color: 0x2a2a2a });
+
+      // Smile - positioned based on direction (use quadratic curve for clean path)
+      switch (this.playerDirection) {
+        case 'down':
+          // Front view: curved smile
+          this.playerGraphics.moveTo(-4 * scale, -26 * scale);
+          this.playerGraphics.quadraticCurveTo(0, -22 * scale, 4 * scale, -26 * scale);
+          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          break;
+        case 'left':
+          // Side view: small curved smile on left
+          this.playerGraphics.moveTo(-7 * scale, -28 * scale);
+          this.playerGraphics.quadraticCurveTo(-5 * scale, -26 * scale, -4 * scale, -28 * scale);
+          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          break;
+        case 'right':
+          // Side view: small curved smile on right
+          this.playerGraphics.moveTo(4 * scale, -28 * scale);
+          this.playerGraphics.quadraticCurveTo(5 * scale, -26 * scale, 7 * scale, -28 * scale);
+          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          break;
+      }
+    }
 
     // Torch in right hand (rounded handle)
     this.playerGraphics.roundRect(12 * scale, -35 * scale, 4 * scale, 20 * scale, 2 * scale);
