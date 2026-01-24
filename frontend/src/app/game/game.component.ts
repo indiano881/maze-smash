@@ -10,6 +10,29 @@ import {
 import { Application, Container, Graphics } from 'pixi.js';
 import { Maze } from './maze';
 
+// Garden Theme Colors
+const GARDEN = {
+  hedgeGreen: 0x4E7B15,
+  hedgeDark: 0x3A5C10,
+  hedgeLight: 0x5E9B1A,
+  roseRed: 0xE31E24,
+  roseDark: 0xB01820,
+  marbleWhite: 0xF2F2F2,
+  marbleVein: 0xD1D1D1,
+  outline: 0x1A1A1A,
+  outlineWidth: 2,
+  shadowAlpha: 0.2,
+  glowYellow: 0xFFFACD,
+  // Gardener colors
+  skinPeach: 0xFFDBAC,
+  overallsBlue: 0x4A7CB0,
+  overallsDark: 0x3A6090,
+  strawHat: 0xE8D4A0,
+  strawHatDark: 0xC8B480,
+  wateringCan: 0x808080,
+  wateringCanDark: 0x606060,
+};
+
 @Component({
   selector: 'app-game',
   standalone: true,
@@ -1265,65 +1288,84 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.iceShardGraphics.visible = !this.iceShard.pickedUp;
   }
 
-  // Create player graphics with directional face
+  // Create Gardener character graphics with directional face
   private initPlayerGraphics(): void {
     const scale = this.tileWidth / 80;
 
     this.playerGraphics.clear();
 
-    // Shadow
+    // Shadow (20% opacity)
     this.playerGraphics.ellipse(0, 5 * scale, 15 * scale, 8 * scale);
-    this.playerGraphics.fill({ color: 0x000000, alpha: 0.3 });
+    this.playerGraphics.fill({ color: 0x000000, alpha: GARDEN.shadowAlpha });
 
-    // Body
-    this.playerGraphics.ellipse(0, -10 * scale, 12 * scale, 16 * scale);
-    this.playerGraphics.fill({ color: 0x2d5a27 });
+    // Legs (simple animation hint based on direction)
+    const legOffset = Math.sin(Date.now() / 200) * 2; // Subtle movement
+    // Left leg
+    this.playerGraphics.roundRect(-6 * scale, -2 * scale, 5 * scale, 10 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsDark });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+    // Right leg
+    this.playerGraphics.roundRect(1 * scale, -2 * scale, 5 * scale, 10 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsDark });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Head (base skin color)
-    this.playerGraphics.circle(0, -30 * scale, 10 * scale);
-    this.playerGraphics.fill({ color: 0xe8c39e });
+    // Blue overalls body
+    this.playerGraphics.roundRect(-10 * scale, -22 * scale, 20 * scale, 22 * scale, 4 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsBlue });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Hair/back of head (dark color) - shown on opposite side of face
-    const hairOffsetX = this.playerDirection === 'left' ? 3 : this.playerDirection === 'right' ? -3 : 0;
-    const hairOffsetY = this.playerDirection === 'up' ? 2 : this.playerDirection === 'down' ? -3 : -1;
-    this.playerGraphics.circle(hairOffsetX * scale, (-30 + hairOffsetY) * scale, 8 * scale);
-    this.playerGraphics.fill({ color: 0x4a3728 });
+    // Overall straps
+    this.playerGraphics.roundRect(-8 * scale, -26 * scale, 4 * scale, 8 * scale, 1 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsBlue });
+    this.playerGraphics.roundRect(4 * scale, -26 * scale, 4 * scale, 8 * scale, 1 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsBlue });
 
-    // Face area (lighter skin) - positioned based on direction
+    // Overall pocket
+    this.playerGraphics.roundRect(-4 * scale, -12 * scale, 8 * scale, 6 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.overallsDark });
+
+    // Arms (peach skin)
+    // Left arm
+    this.playerGraphics.roundRect(-14 * scale, -20 * scale, 5 * scale, 14 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.skinPeach });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+    // Right arm
+    this.playerGraphics.roundRect(9 * scale, -20 * scale, 5 * scale, 14 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.skinPeach });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+    // Head (peach skin)
+    this.playerGraphics.circle(0, -32 * scale, 10 * scale);
+    this.playerGraphics.fill({ color: GARDEN.skinPeach });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+    // Face direction handling
     let faceOffsetX = 0;
-    let faceOffsetY = 0;
     switch (this.playerDirection) {
-      case 'down': faceOffsetY = 2; break;
-      case 'up': faceOffsetY = -3; break;
-      case 'left': faceOffsetX = -4; break;
-      case 'right': faceOffsetX = 4; break;
+      case 'left': faceOffsetX = -3; break;
+      case 'right': faceOffsetX = 3; break;
     }
-    this.playerGraphics.circle(faceOffsetX * scale, (-30 + faceOffsetY) * scale, 7 * scale);
-    this.playerGraphics.fill({ color: 0xe8c39e });
 
     // Eyes - positioned based on direction
-    let eye1X = -3, eye1Y = -31;
-    let eye2X = 3, eye2Y = -31;
+    let eye1X = -3, eye1Y = -33;
+    let eye2X = 3, eye2Y = -33;
     switch (this.playerDirection) {
       case 'down':
-        // Front view: eyes side by side
         eye1X = -3; eye2X = 3;
-        eye1Y = eye2Y = -28;
+        eye1Y = eye2Y = -31;
         break;
       case 'up':
-        // Back view: no eyes visible
-        break;
+        break; // No eyes visible
       case 'left':
-        // Side view: eyes stacked vertically on left side
         eye1X = eye2X = -5;
-        eye1Y = -32; eye2Y = -28;
+        eye1Y = -34; eye2Y = -30;
         break;
       case 'right':
-        // Side view: eyes stacked vertically on right side
         eye1X = eye2X = 5;
-        eye1Y = -32; eye2Y = -28;
+        eye1Y = -34; eye2Y = -30;
         break;
     }
+
     // Draw eyes (only visible when not facing away)
     if (this.playerDirection !== 'up') {
       this.playerGraphics.circle(eye1X * scale, eye1Y * scale, 2 * scale);
@@ -1331,52 +1373,87 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.playerGraphics.circle(eye2X * scale, eye2Y * scale, 2 * scale);
       this.playerGraphics.fill({ color: 0x2a2a2a });
 
-      // Smile - positioned based on direction (use quadratic curve for clean path)
+      // Rosy cheeks
+      this.playerGraphics.circle((-5 + faceOffsetX) * scale, -29 * scale, 2 * scale);
+      this.playerGraphics.fill({ color: 0xFFB6A3, alpha: 0.6 });
+      this.playerGraphics.circle((5 + faceOffsetX) * scale, -29 * scale, 2 * scale);
+      this.playerGraphics.fill({ color: 0xFFB6A3, alpha: 0.6 });
+
+      // Smile
       switch (this.playerDirection) {
         case 'down':
-          // Front view: curved smile
-          this.playerGraphics.moveTo(-4 * scale, -26 * scale);
-          this.playerGraphics.quadraticCurveTo(0, -22 * scale, 4 * scale, -26 * scale);
-          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          this.playerGraphics.moveTo(-3 * scale, -28 * scale);
+          this.playerGraphics.quadraticCurveTo(0, -25 * scale, 3 * scale, -28 * scale);
+          this.playerGraphics.stroke({ color: GARDEN.outline, width: 1.5 * scale });
           break;
         case 'left':
-          // Side view: small curved smile on left
-          this.playerGraphics.moveTo(-7 * scale, -28 * scale);
-          this.playerGraphics.quadraticCurveTo(-5 * scale, -26 * scale, -4 * scale, -28 * scale);
-          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          this.playerGraphics.moveTo(-6 * scale, -28 * scale);
+          this.playerGraphics.quadraticCurveTo(-4 * scale, -26 * scale, -3 * scale, -28 * scale);
+          this.playerGraphics.stroke({ color: GARDEN.outline, width: 1.5 * scale });
           break;
         case 'right':
-          // Side view: small curved smile on right
-          this.playerGraphics.moveTo(4 * scale, -28 * scale);
-          this.playerGraphics.quadraticCurveTo(5 * scale, -26 * scale, 7 * scale, -28 * scale);
-          this.playerGraphics.stroke({ color: 0x2a2a2a, width: 1.5 * scale });
+          this.playerGraphics.moveTo(3 * scale, -28 * scale);
+          this.playerGraphics.quadraticCurveTo(4 * scale, -26 * scale, 6 * scale, -28 * scale);
+          this.playerGraphics.stroke({ color: GARDEN.outline, width: 1.5 * scale });
           break;
       }
     }
 
-    // Torch in right hand (rounded handle)
-    this.playerGraphics.roundRect(12 * scale, -35 * scale, 4 * scale, 20 * scale, 2 * scale);
-    this.playerGraphics.fill({ color: 0x8b4513 });
+    // Straw hat
+    // Hat brim
+    this.playerGraphics.ellipse(0, -40 * scale, 14 * scale, 5 * scale);
+    this.playerGraphics.fill({ color: GARDEN.strawHat });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Flame
-    this.playerGraphics.ellipse(14 * scale, -42 * scale, 6 * scale, 10 * scale);
-    this.playerGraphics.fill({ color: 0xff6600 });
-    this.playerGraphics.ellipse(14 * scale, -44 * scale, 4 * scale, 7 * scale);
-    this.playerGraphics.fill({ color: 0xffaa00 });
+    // Hat crown
+    this.playerGraphics.ellipse(0, -44 * scale, 9 * scale, 6 * scale);
+    this.playerGraphics.fill({ color: GARDEN.strawHat });
+    this.playerGraphics.roundRect(-9 * scale, -44 * scale, 18 * scale, 5 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.strawHat });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Hammer in left hand (if picked up)
+    // Hat band (red)
+    this.playerGraphics.roundRect(-9 * scale, -42 * scale, 18 * scale, 3 * scale, 1 * scale);
+    this.playerGraphics.fill({ color: GARDEN.roseRed });
+
+    // Watering can in right hand
+    // Can body
+    this.playerGraphics.roundRect(12 * scale, -18 * scale, 10 * scale, 12 * scale, 3 * scale);
+    this.playerGraphics.fill({ color: GARDEN.wateringCan });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+    // Can spout
+    this.playerGraphics.moveTo(22 * scale, -16 * scale);
+    this.playerGraphics.lineTo(28 * scale, -22 * scale);
+    this.playerGraphics.lineTo(26 * scale, -24 * scale);
+    this.playerGraphics.lineTo(20 * scale, -18 * scale);
+    this.playerGraphics.closePath();
+    this.playerGraphics.fill({ color: GARDEN.wateringCan });
+    this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+    // Can handle
+    this.playerGraphics.moveTo(14 * scale, -18 * scale);
+    this.playerGraphics.quadraticCurveTo(10 * scale, -26 * scale, 14 * scale, -30 * scale);
+    this.playerGraphics.stroke({ color: GARDEN.wateringCanDark, width: 3 * scale });
+
+    // Spout rose (water outlet)
+    this.playerGraphics.circle(27 * scale, -23 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: GARDEN.wateringCanDark });
+
+    // Hammer in left hand (if picked up) - now a garden trowel style
     if (this.player.hasHammer) {
-      // Hammer handle
-      this.playerGraphics.roundRect(-16 * scale, -32 * scale, 4 * scale, 20 * scale, 2 * scale);
+      // Trowel handle
+      this.playerGraphics.roundRect(-20 * scale, -16 * scale, 4 * scale, 14 * scale, 2 * scale);
       this.playerGraphics.fill({ color: 0x8b4513 });
+      this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-      // Hammer head - sits on top of handle
-      this.playerGraphics.roundRect(-22 * scale, -38 * scale, 16 * scale, 8 * scale, 3 * scale);
-      this.playerGraphics.fill({ color: 0x666666 });
-
-      // Hammer head highlight
-      this.playerGraphics.roundRect(-20 * scale, -36 * scale, 12 * scale, 2 * scale, 1 * scale);
+      // Trowel head
+      this.playerGraphics.moveTo(-22 * scale, -20 * scale);
+      this.playerGraphics.lineTo(-14 * scale, -20 * scale);
+      this.playerGraphics.lineTo(-18 * scale, -30 * scale);
+      this.playerGraphics.closePath();
       this.playerGraphics.fill({ color: 0x888888 });
+      this.playerGraphics.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
     }
   }
 
@@ -1386,14 +1463,49 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const hh = this.tileHeight / 2;
 
     const floor = new Graphics();
+
+    // White marble base
     floor.poly([
       { x: 0, y: -hh },
       { x: hw, y: 0 },
       { x: 0, y: hh },
       { x: -hw, y: 0 },
     ]);
-    floor.fill({ color: 0x1a1a1a });
-    floor.stroke({ color: 0x2a2a2a, width: 1 });
+    floor.fill({ color: GARDEN.marbleWhite });
+
+    // Marble vein pattern (subtle grey lines)
+    // Use seeded randomness based on grid position for consistent patterns
+    const seed = gridX * 7 + gridY * 13;
+    const veinOffset1 = ((seed % 5) - 2) * 0.1;
+    const veinOffset2 = ((seed % 7) - 3) * 0.08;
+
+    // First vein
+    floor.moveTo(-hw * 0.3, -hh * 0.2 + veinOffset1 * hh);
+    floor.quadraticCurveTo(0, hh * 0.1 + veinOffset2 * hh, hw * 0.4, -hh * 0.1);
+    floor.stroke({ color: GARDEN.marbleVein, width: 1, alpha: 0.6 });
+
+    // Second vein
+    floor.moveTo(-hw * 0.1, hh * 0.3 + veinOffset2 * hh);
+    floor.quadraticCurveTo(hw * 0.2, 0, hw * 0.3, -hh * 0.4 + veinOffset1 * hh);
+    floor.stroke({ color: GARDEN.marbleVein, width: 1.5, alpha: 0.4 });
+
+    // Tile outline
+    floor.poly([
+      { x: 0, y: -hh },
+      { x: hw, y: 0 },
+      { x: 0, y: hh },
+      { x: -hw, y: 0 },
+    ]);
+    floor.stroke({ color: 0xE0E0E0, width: 1 });
+
+    // Shadow on floor (20% opacity)
+    floor.poly([
+      { x: -hw * 0.3, y: 0 },
+      { x: 0, y: hh * 0.3 },
+      { x: hw * 0.3, y: 0 },
+      { x: 0, y: -hh * 0.3 },
+    ]);
+    floor.fill({ color: 0x000000, alpha: GARDEN.shadowAlpha });
 
     floor.x = x;
     floor.y = y;
@@ -1410,130 +1522,209 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const hh = this.tileHeight / 2;
     const wh = this.wallHeight;
 
-    // Top wall (blocks Y-1 movement) - NE edge - at back of cell
-    // Edge: from (0, -hh) to (hw, 0)
+    // Helper to draw roses on hedge face
+    const drawRoses = (wall: Graphics, startX: number, startY: number, endX: number, endY: number, seed: number) => {
+      const roseCount = 2 + (seed % 2);
+      for (let i = 0; i < roseCount; i++) {
+        const t = (i + 0.5) / roseCount + ((seed * (i + 1)) % 10) * 0.03;
+        const rx = startX + (endX - startX) * t;
+        const ry = startY + (endY - startY) * t - wh * 0.4 - ((seed * i) % 5) * 2;
+
+        // Rose petals
+        wall.circle(rx, ry, 3);
+        wall.fill({ color: GARDEN.roseRed });
+        wall.circle(rx - 2, ry - 1, 2);
+        wall.fill({ color: GARDEN.roseRed });
+        wall.circle(rx + 2, ry - 1, 2);
+        wall.fill({ color: GARDEN.roseRed });
+        // Rose center
+        wall.circle(rx, ry - 1, 1.5);
+        wall.fill({ color: GARDEN.roseDark });
+      }
+    };
+
+    // Top wall (blocks Y-1 movement) - NE edge - hedge
     if (cell.walls.top === true) {
       const wall = new Graphics();
-      // Base aligned with grid, rounded top
+      const seed = gridX * 11 + gridY * 17;
+
+      // Hedge body (lighter green for top-facing)
       wall.moveTo(0, -hh);
       wall.lineTo(hw, 0);
       wall.lineTo(hw, -wh);
       wall.quadraticCurveTo(hw * 0.5, -hh / 2 - wh - 4, 0, -hh - wh);
       wall.closePath();
-      wall.fill({ color: 0x4a4a4a });
+      wall.fill({ color: GARDEN.hedgeGreen });
+      wall.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Leaf texture bumps
+      for (let i = 0; i < 3; i++) {
+        const bx = hw * 0.2 + (i * hw * 0.25);
+        const by = -hh / 2 + (i * hh * 0.15) - wh * 0.5;
+        wall.circle(bx, by, 4);
+        wall.fill({ color: GARDEN.hedgeLight });
+      }
+
+      // Roses
+      drawRoses(wall, 0, -hh, hw, 0, seed);
+
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
-    // Left wall (blocks X-1 movement) - NW edge - at back of cell
-    // Edge: from (-hw, 0) to (0, -hh)
+    // Left wall (blocks X-1 movement) - NW edge - hedge (darker side)
     if (cell.walls.left) {
       const wall = new Graphics();
+      const seed = gridX * 13 + gridY * 19;
+
       wall.moveTo(-hw, 0);
       wall.lineTo(0, -hh);
       wall.lineTo(0, -hh - wh);
       wall.quadraticCurveTo(-hw * 0.5, -hh / 2 - wh - 4, -hw, -wh);
       wall.closePath();
-      wall.fill({ color: 0x5a5a5a });
+      wall.fill({ color: GARDEN.hedgeDark }); // Darker for depth
+      wall.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Leaf texture
+      for (let i = 0; i < 3; i++) {
+        const bx = -hw * 0.7 + (i * hw * 0.2);
+        const by = -hh / 2 + (i * hh * 0.12) - wh * 0.5;
+        wall.circle(bx, by, 3);
+        wall.fill({ color: GARDEN.hedgeGreen });
+      }
+
+      // Roses
+      drawRoses(wall, -hw, 0, 0, -hh, seed);
+
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
-    // Bottom wall (blocks Y+1 movement) - SW edge - at front of cell
-    // Edge: from (-hw, 0) to (0, hh)
+    // Bottom wall (blocks Y+1 movement) - SW edge - hedge (darker side)
     if (cell.walls.bottom) {
       const wall = new Graphics();
+      const seed = gridX * 23 + gridY * 29;
+
       wall.moveTo(-hw, 0);
       wall.lineTo(0, hh);
       wall.lineTo(0, hh - wh);
       wall.quadraticCurveTo(-hw * 0.5, hh / 2 - wh - 4, -hw, -wh);
       wall.closePath();
-      wall.fill({ color: 0x4a4a4a });
+      wall.fill({ color: GARDEN.hedgeDark }); // Darker for depth
+      wall.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Leaf texture
+      for (let i = 0; i < 3; i++) {
+        const bx = -hw * 0.7 + (i * hw * 0.2);
+        const by = hh / 2 - (i * hh * 0.12) - wh * 0.5;
+        wall.circle(bx, by, 3);
+        wall.fill({ color: GARDEN.hedgeGreen });
+      }
+
+      // Roses
+      drawRoses(wall, -hw, 0, 0, hh, seed);
+
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY + 1) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
-    // Right wall (blocks X+1 movement) - SE edge - at front of cell
-    // Edge: from (0, hh) to (hw, 0)
+    // Right wall (blocks X+1 movement) - SE edge - hedge
     if (cell.walls.right) {
       const wall = new Graphics();
+      const seed = gridX * 31 + gridY * 37;
+
       wall.moveTo(0, hh);
       wall.lineTo(hw, 0);
       wall.lineTo(hw, -wh);
       wall.quadraticCurveTo(hw * 0.5, hh / 2 - wh - 4, 0, hh - wh);
       wall.closePath();
-      wall.fill({ color: 0x5a5a5a });
+      wall.fill({ color: GARDEN.hedgeGreen });
+      wall.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Leaf texture
+      for (let i = 0; i < 3; i++) {
+        const bx = hw * 0.2 + (i * hw * 0.25);
+        const by = hh / 2 - (i * hh * 0.15) - wh * 0.5;
+        wall.circle(bx, by, 4);
+        wall.fill({ color: GARDEN.hedgeLight });
+      }
+
+      // Roses
+      drawRoses(wall, 0, hh, hw, 0, seed);
+
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY + 1) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
-    // Corner connectors - cute rounded bubble pillars at grid corners
-    const pr = wh * 0.5; // pillar radius (slightly bigger)
+    // Corner connectors - hedge topiary spheres
+    const pr = wh * 0.5;
 
-    // Helper to draw a cute pillar at position (px, py)
-    const drawCutePillar = (corner: Graphics, px: number, py: number) => {
-      // Base bubble
-      corner.circle(px, py, pr * 0.8);
-      corner.fill({ color: 0x5a5a5a });
+    const drawHedgePillar = (corner: Graphics, px: number, py: number) => {
+      // Base
+      corner.circle(px, py, pr * 0.7);
+      corner.fill({ color: GARDEN.hedgeDark });
+
       // Body (tapers up)
-      corner.moveTo(px - pr * 0.7, py);
-      corner.quadraticCurveTo(px - pr * 0.5, py - wh * 0.5, px - pr * 0.6, py - wh);
-      corner.lineTo(px + pr * 0.6, py - wh);
-      corner.quadraticCurveTo(px + pr * 0.5, py - wh * 0.5, px + pr * 0.7, py);
+      corner.moveTo(px - pr * 0.6, py);
+      corner.quadraticCurveTo(px - pr * 0.4, py - wh * 0.5, px - pr * 0.5, py - wh);
+      corner.lineTo(px + pr * 0.5, py - wh);
+      corner.quadraticCurveTo(px + pr * 0.4, py - wh * 0.5, px + pr * 0.6, py);
       corner.closePath();
-      corner.fill({ color: 0x5a5a5a });
-      // Cute dome top
-      corner.ellipse(px, py - wh, pr * 0.7, pr * 0.5);
-      corner.fill({ color: 0x6a6a6a });
-      corner.circle(px, py - wh - pr * 0.3, pr * 0.5);
-      corner.fill({ color: 0x6a6a6a });
-      // Highlight dot
-      corner.circle(px - pr * 0.2, py - wh - pr * 0.4, pr * 0.15);
-      corner.fill({ color: 0x8a8a8a });
+      corner.fill({ color: GARDEN.hedgeGreen });
+      corner.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Topiary ball on top
+      corner.circle(px, py - wh - pr * 0.3, pr * 0.6);
+      corner.fill({ color: GARDEN.hedgeGreen });
+      corner.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
+      // Highlight
+      corner.circle(px - pr * 0.2, py - wh - pr * 0.5, pr * 0.2);
+      corner.fill({ color: GARDEN.hedgeLight });
     };
 
-    // Top corner (0, -hh) - behind player in current cell
+    // Top corner
     if (cell.walls.top || cell.walls.left) {
       const corner = new Graphics();
-      drawCutePillar(corner, 0, -hh);
+      drawHedgePillar(corner, 0, -hh);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY - 1) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Right corner (hw, 0) - between back and front
+    // Right corner
     if (cell.walls.top || cell.walls.right) {
       const corner = new Graphics();
-      drawCutePillar(corner, hw, 0);
+      drawHedgePillar(corner, hw, 0);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Left corner (-hw, 0) - between back and front
+    // Left corner
     if (cell.walls.left || cell.walls.bottom) {
       const corner = new Graphics();
-      drawCutePillar(corner, -hw, 0);
+      drawHedgePillar(corner, -hw, 0);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Bottom corner (0, hh) - in front of player in current cell
+    // Bottom corner
     if (cell.walls.bottom || cell.walls.right) {
       const corner = new Graphics();
-      drawCutePillar(corner, 0, hh);
+      drawHedgePillar(corner, 0, hh);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY + 1) * 100 + 40;
@@ -1547,33 +1738,53 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     const exit = new Graphics();
 
-    // Glow
+    // Soft radial glow (pale yellow) - multiple layers for gradient effect
+    exit.circle(0, -20 * scale, 50 * scale);
+    exit.fill({ color: GARDEN.glowYellow, alpha: 0.15 });
     exit.circle(0, -20 * scale, 40 * scale);
-    exit.fill({ color: 0xffd700, alpha: 0.3 });
+    exit.fill({ color: GARDEN.glowYellow, alpha: 0.2 });
+    exit.circle(0, -20 * scale, 30 * scale);
+    exit.fill({ color: GARDEN.glowYellow, alpha: 0.25 });
 
-    // Archway pillars (rounded columns)
+    // Garden archway - hedge pillars
     exit.roundRect(-20 * scale, -55 * scale, 8 * scale, 60 * scale, 4 * scale);
-    exit.fill({ color: 0x4a4a4a });
-    // Left pillar cap
-    exit.ellipse(-16 * scale, -55 * scale, 5 * scale, 3 * scale);
-    exit.fill({ color: 0x6a6a6a });
+    exit.fill({ color: GARDEN.hedgeGreen });
+    exit.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+    // Left pillar topiary ball
+    exit.circle(-16 * scale, -58 * scale, 6 * scale);
+    exit.fill({ color: GARDEN.hedgeGreen });
+    exit.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+
     exit.roundRect(12 * scale, -55 * scale, 8 * scale, 60 * scale, 4 * scale);
-    exit.fill({ color: 0x4a4a4a });
-    // Right pillar cap
-    exit.ellipse(16 * scale, -55 * scale, 5 * scale, 3 * scale);
-    exit.fill({ color: 0x6a6a6a });
+    exit.fill({ color: GARDEN.hedgeGreen });
+    exit.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
+    // Right pillar topiary ball
+    exit.circle(16 * scale, -58 * scale, 6 * scale);
+    exit.fill({ color: GARDEN.hedgeGreen });
+    exit.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Arch top (rounded)
+    // Arch top (hedge)
     exit.arc(0, -55 * scale, 16 * scale, Math.PI, 0);
-    exit.fill({ color: 0x4a4a4a });
+    exit.fill({ color: GARDEN.hedgeGreen });
+    exit.stroke({ color: GARDEN.outline, width: GARDEN.outlineWidth });
 
-    // Dark doorway (rounded)
+    // Garden gate opening (warm light inside)
     exit.roundRect(-12 * scale, -50 * scale, 24 * scale, 52 * scale, 6 * scale);
-    exit.fill({ color: 0x0a0505 });
+    exit.fill({ color: 0xFFFAE6 });
 
-    // Light glow inside (rounded)
+    // Soft inner glow
     exit.roundRect(-8 * scale, -45 * scale, 16 * scale, 45 * scale, 4 * scale);
-    exit.fill({ color: 0xffd700, alpha: 0.15 });
+    exit.fill({ color: GARDEN.glowYellow, alpha: 0.4 });
+
+    // Roses on archway
+    exit.circle(-18 * scale, -35 * scale, 3);
+    exit.fill({ color: GARDEN.roseRed });
+    exit.circle(-15 * scale, -25 * scale, 2.5);
+    exit.fill({ color: GARDEN.roseRed });
+    exit.circle(18 * scale, -40 * scale, 3);
+    exit.fill({ color: GARDEN.roseRed });
+    exit.circle(15 * scale, -30 * scale, 2.5);
+    exit.fill({ color: GARDEN.roseRed });
 
     exit.x = x;
     exit.y = y;
@@ -1586,23 +1797,45 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const slotRadius = 16;
     const spacing = 12;
 
-    // Character face circle (placeholder)
+    // Gardener character face
     this.hudFace.clear();
-    // Outer ring
+    // Outer ring (hedge green border)
     this.hudFace.circle(faceRadius, faceRadius, faceRadius);
-    this.hudFace.fill({ color: 0x2a2a2a });
-    this.hudFace.stroke({ color: 0x4a4a4a, width: 3 });
-    // Face background
-    this.hudFace.circle(faceRadius, faceRadius, faceRadius - 4);
-    this.hudFace.fill({ color: 0xe8c39e });
+    this.hudFace.fill({ color: GARDEN.hedgeDark });
+    this.hudFace.stroke({ color: GARDEN.outline, width: 3 });
+
+    // Face background (peach skin)
+    this.hudFace.circle(faceRadius, faceRadius + 4, faceRadius - 6);
+    this.hudFace.fill({ color: GARDEN.skinPeach });
+
     // Eyes
-    this.hudFace.circle(faceRadius - 8, faceRadius - 5, 4);
+    this.hudFace.circle(faceRadius - 7, faceRadius + 2, 3);
     this.hudFace.fill({ color: 0x2a2a2a });
-    this.hudFace.circle(faceRadius + 8, faceRadius - 5, 4);
+    this.hudFace.circle(faceRadius + 7, faceRadius + 2, 3);
     this.hudFace.fill({ color: 0x2a2a2a });
+
+    // Rosy cheeks
+    this.hudFace.circle(faceRadius - 10, faceRadius + 8, 4);
+    this.hudFace.fill({ color: 0xFFB6A3, alpha: 0.5 });
+    this.hudFace.circle(faceRadius + 10, faceRadius + 8, 4);
+    this.hudFace.fill({ color: 0xFFB6A3, alpha: 0.5 });
+
     // Smile
-    this.hudFace.arc(faceRadius, faceRadius + 2, 10, 0.2, Math.PI - 0.2);
+    this.hudFace.moveTo(faceRadius - 6, faceRadius + 10);
+    this.hudFace.quadraticCurveTo(faceRadius, faceRadius + 16, faceRadius + 6, faceRadius + 10);
     this.hudFace.stroke({ color: 0x2a2a2a, width: 2 });
+
+    // Straw hat
+    this.hudFace.ellipse(faceRadius, faceRadius - 8, faceRadius - 2, 8);
+    this.hudFace.fill({ color: GARDEN.strawHat });
+    this.hudFace.stroke({ color: GARDEN.outline, width: 2 });
+    // Hat crown
+    this.hudFace.roundRect(faceRadius - 14, faceRadius - 20, 28, 14, 4);
+    this.hudFace.fill({ color: GARDEN.strawHat });
+    this.hudFace.stroke({ color: GARDEN.outline, width: 2 });
+    // Hat band
+    this.hudFace.roundRect(faceRadius - 14, faceRadius - 10, 28, 4, 1);
+    this.hudFace.fill({ color: GARDEN.roseRed });
 
     // Inventory slot 1 (hammer)
     this.hudSlot1.clear();

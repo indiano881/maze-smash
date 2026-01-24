@@ -1,0 +1,7 @@
+const GARDEN_THEME = {
+  hedgeGreen: "#4E7B15",
+  hedgeDark: "#3A5C10",
+  roseRed: "#E31E24",
+  outline: "#1A1A1A",
+  shadow: "rgba(0, 0, 0, 0.2)"
+};
