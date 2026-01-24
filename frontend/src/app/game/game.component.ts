@@ -39,6 +39,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private player = { x: 0, y: 0, hasHammer: false };
   private playerVisual = { x: 0, y: 0 }; // Animated position
   private playerZCell = { x: 0, y: 0 };  // Cell used for z-index (updates only when movement completes)
+  private playerDirection: 'up' | 'down' | 'left' | 'right' = 'down'; // Last movement direction
   private flag = { x: 0, y: 0, captured: false };
   private hammer = { x: 0, y: 0, pickedUp: false };
   private exit = { x: 0, y: 0 };
@@ -232,6 +233,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.player = { x: 0, y: 0, hasHammer: false };
     this.playerVisual = { x: 0, y: 0 };
     this.playerZCell = { x: 0, y: 0 };
+    this.playerDirection = 'down';
     this.flag = {
       x: Math.floor(Math.random() * (this.MAZE_WIDTH - 1)) + 1,
       y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 1)) + 1,
@@ -275,29 +277,42 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     let newX = this.player.x;
     let newY = this.player.y;
+    let direction: 'up' | 'down' | 'left' | 'right' | null = null;
 
     switch (event.key.toLowerCase()) {
       case 'w':
       case 'arrowup':
         newY--;
+        direction = 'up';
         break;
       case 's':
       case 'arrowdown':
         newY++;
+        direction = 'down';
         break;
       case 'a':
       case 'arrowleft':
         newX--;
+        direction = 'left';
         break;
       case 'd':
       case 'arrowright':
         newX++;
+        direction = 'right';
         break;
+      case 'e':
+        event.preventDefault();
+        this.trySmashWall();
+        return;
       default:
         return;
     }
 
     event.preventDefault();
+
+    if (direction) {
+      this.playerDirection = direction;
+    }
 
     if (this.maze.canMove(this.player.x, this.player.y, newX, newY)) {
       this.player.x = newX;
@@ -328,6 +343,75 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
         this.generateNewMaze();
       }, 100);
     }
+  }
+
+  private trySmashWall(): void {
+    // Must have hammer to smash
+    if (!this.player.hasHammer) return;
+
+    const { x, y } = this.player;
+    const cell = this.maze.cells[y]?.[x];
+    if (!cell) return;
+
+    // Check if there's a wall in the facing direction
+    let wallExists = false;
+    let adjacentX = x;
+    let adjacentY = y;
+    let currentWallKey: 'top' | 'bottom' | 'left' | 'right';
+    let adjacentWallKey: 'top' | 'bottom' | 'left' | 'right';
+
+    switch (this.playerDirection) {
+      case 'up':
+        wallExists = cell.walls.top;
+        adjacentY = y - 1;
+        currentWallKey = 'top';
+        adjacentWallKey = 'bottom';
+        break;
+      case 'down':
+        wallExists = cell.walls.bottom;
+        adjacentY = y + 1;
+        currentWallKey = 'bottom';
+        adjacentWallKey = 'top';
+        break;
+      case 'left':
+        wallExists = cell.walls.left;
+        adjacentX = x - 1;
+        currentWallKey = 'left';
+        adjacentWallKey = 'right';
+        break;
+      case 'right':
+        wallExists = cell.walls.right;
+        adjacentX = x + 1;
+        currentWallKey = 'right';
+        adjacentWallKey = 'left';
+        break;
+    }
+
+    // No wall to smash
+    if (!wallExists) return;
+
+    // Don't smash outer boundary walls
+    if (adjacentX < 0 || adjacentX >= this.MAZE_WIDTH ||
+        adjacentY < 0 || adjacentY >= this.MAZE_HEIGHT) {
+      return;
+    }
+
+    // Smash the wall! Remove from both cells
+    cell.walls[currentWallKey] = false;
+    const adjacentCell = this.maze.cells[adjacentY]?.[adjacentX];
+    if (adjacentCell) {
+      adjacentCell.walls[adjacentWallKey] = false;
+    }
+
+    // Player loses the hammer
+    this.player.hasHammer = false;
+
+    // Redraw player without hammer
+    this.initPlayerGraphics();
+
+    // Redraw the maze to reflect the broken wall
+    this.drawMaze();
+    this.updatePlayerPosition();
   }
 
   // Draw static maze elements (only called on maze change)
