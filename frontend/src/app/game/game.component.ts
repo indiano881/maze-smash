@@ -286,127 +286,129 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const wh = this.wallHeight;
 
     // Top wall (blocks Y-1 movement) - NE edge - at back of cell
+    // Edge: from (0, -hh) to (hw, 0)
     if (cell.walls.top === true) {
       const wall = new Graphics();
-      const capRadius = wh * 0.4;
-      wall.moveTo(capRadius * 0.5, -hh - capRadius * 0.25);
-      wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
-      wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
-      wall.lineTo(capRadius * 0.5, -hh - wh + capRadius * 0.25);
-      wall.quadraticCurveTo(-capRadius * 0.3, -hh - wh * 0.5, capRadius * 0.5, -hh - capRadius * 0.25);
+      // Base aligned with grid, rounded top
+      wall.moveTo(0, -hh);
+      wall.lineTo(hw, 0);
+      wall.lineTo(hw, -wh);
+      wall.quadraticCurveTo(hw * 0.5, -hh / 2 - wh - 4, 0, -hh - wh);
+      wall.closePath();
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 - 25; // Behind player at same cell
+      wall.zIndex = (gridX + gridY) * 100 - 25;
       this.gameContainer.addChild(wall);
     }
 
     // Left wall (blocks X-1 movement) - NW edge - at back of cell
+    // Edge: from (-hw, 0) to (0, -hh)
     if (cell.walls.left) {
       const wall = new Graphics();
-      const capRadius = wh * 0.4;
-      wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
-      wall.lineTo(-capRadius * 0.5, -hh - capRadius * 0.25);
-      wall.quadraticCurveTo(capRadius * 0.3, -hh - wh * 0.5, -capRadius * 0.5, -hh - wh + capRadius * 0.25);
-      wall.lineTo(-hw + capRadius * 0.5, -wh + capRadius * 0.25);
-      wall.quadraticCurveTo(-hw - capRadius * 0.3, -wh * 0.5, -hw + capRadius * 0.5, -capRadius * 0.25);
+      wall.moveTo(-hw, 0);
+      wall.lineTo(0, -hh);
+      wall.lineTo(0, -hh - wh);
+      wall.quadraticCurveTo(-hw * 0.5, -hh / 2 - wh - 4, -hw, -wh);
+      wall.closePath();
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 - 25; // Behind player at same cell
+      wall.zIndex = (gridX + gridY) * 100 - 25;
       this.gameContainer.addChild(wall);
     }
 
     // Bottom wall (blocks Y+1 movement) - SW edge - at front of cell
+    // Edge: from (-hw, 0) to (0, hh)
     if (cell.walls.bottom) {
       const wall = new Graphics();
-      const capRadius = wh * 0.4;
-      wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
-      wall.lineTo(-capRadius * 0.5, hh - capRadius * 0.25);
-      wall.quadraticCurveTo(capRadius * 0.3, hh - wh * 0.5, -capRadius * 0.5, hh - wh + capRadius * 0.25);
-      wall.lineTo(-hw + capRadius * 0.5, -wh + capRadius * 0.25);
-      wall.quadraticCurveTo(-hw - capRadius * 0.3, -wh * 0.5, -hw + capRadius * 0.5, -capRadius * 0.25);
+      wall.moveTo(-hw, 0);
+      wall.lineTo(0, hh);
+      wall.lineTo(0, hh - wh);
+      wall.quadraticCurveTo(-hw * 0.5, hh / 2 - wh - 4, -hw, -wh);
+      wall.closePath();
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 + 75; // In front of player at same cell
+      wall.zIndex = (gridX + gridY) * 100 + 75;
       this.gameContainer.addChild(wall);
     }
 
     // Right wall (blocks X+1 movement) - SE edge - at front of cell
+    // Edge: from (0, hh) to (hw, 0)
     if (cell.walls.right) {
       const wall = new Graphics();
-      const capRadius = wh * 0.4;
-      wall.moveTo(capRadius * 0.5, hh - capRadius * 0.25);
-      wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
-      wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
-      wall.lineTo(capRadius * 0.5, hh - wh + capRadius * 0.25);
-      wall.quadraticCurveTo(-capRadius * 0.3, hh - wh * 0.5, capRadius * 0.5, hh - capRadius * 0.25);
+      wall.moveTo(0, hh);
+      wall.lineTo(hw, 0);
+      wall.lineTo(hw, -wh);
+      wall.quadraticCurveTo(hw * 0.5, hh / 2 - wh - 4, 0, hh - wh);
+      wall.closePath();
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 + 75; // In front of player at same cell
+      wall.zIndex = (gridX + gridY) * 100 + 75;
       this.gameContainer.addChild(wall);
     }
 
-    // Corner connectors - rounded pillars where walls meet
-    // z-index based on corner's actual isometric position for proper depth sorting with player
-    const pillarRadius = wh * 0.35;
+    // Corner connectors - cute rounded bubble pillars at grid corners
+    const pr = wh * 0.5; // pillar radius (slightly bigger)
 
-    // Top corner (where top wall meets left wall) - behind the cell center
+    // Helper to draw a cute pillar at position (px, py)
+    const drawCutePillar = (corner: Graphics, px: number, py: number) => {
+      // Base bubble
+      corner.circle(px, py, pr * 0.8);
+      corner.fill({ color: 0x5a5a5a });
+      // Body (tapers up)
+      corner.moveTo(px - pr * 0.7, py);
+      corner.quadraticCurveTo(px - pr * 0.5, py - wh * 0.5, px - pr * 0.6, py - wh);
+      corner.lineTo(px + pr * 0.6, py - wh);
+      corner.quadraticCurveTo(px + pr * 0.5, py - wh * 0.5, px + pr * 0.7, py);
+      corner.closePath();
+      corner.fill({ color: 0x5a5a5a });
+      // Cute dome top
+      corner.ellipse(px, py - wh, pr * 0.7, pr * 0.5);
+      corner.fill({ color: 0x6a6a6a });
+      corner.circle(px, py - wh - pr * 0.3, pr * 0.5);
+      corner.fill({ color: 0x6a6a6a });
+      // Highlight dot
+      corner.circle(px - pr * 0.2, py - wh - pr * 0.4, pr * 0.15);
+      corner.fill({ color: 0x8a8a8a });
+    };
+
+    // Top corner (0, -hh)
     if (cell.walls.top || cell.walls.left) {
       const corner = new Graphics();
-      corner.ellipse(0, -hh, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.rect(-pillarRadius, -hh, pillarRadius * 2, -wh + pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.ellipse(0, -hh - wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
+      drawCutePillar(corner, 0, -hh);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY - 1) * 100 + 50;
       this.gameContainer.addChild(corner);
     }
 
-    // Right corner (where top wall meets right wall) - same depth as cell
+    // Right corner (hw, 0)
     if (cell.walls.top || cell.walls.right) {
       const corner = new Graphics();
-      corner.ellipse(hw, 0, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.rect(hw - pillarRadius, 0, pillarRadius * 2, -wh + pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.ellipse(hw, -wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
+      drawCutePillar(corner, hw, 0);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 50;
       this.gameContainer.addChild(corner);
     }
 
-    // Left corner (where left wall meets bottom wall) - same depth as cell
+    // Left corner (-hw, 0)
     if (cell.walls.left || cell.walls.bottom) {
       const corner = new Graphics();
-      corner.ellipse(-hw, 0, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.rect(-hw - pillarRadius, 0, pillarRadius * 2, -wh + pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.ellipse(-hw, -wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
+      drawCutePillar(corner, -hw, 0);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 50;
       this.gameContainer.addChild(corner);
     }
 
-    // Bottom corner (where bottom wall meets right wall) - in front of the cell center
+    // Bottom corner (0, hh)
     if (cell.walls.bottom || cell.walls.right) {
       const corner = new Graphics();
-      corner.ellipse(0, hh, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.rect(-pillarRadius, hh, pillarRadius * 2, -wh + pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
-      corner.ellipse(0, hh - wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
-      corner.fill({ color: 0x5a5a5a });
+      drawCutePillar(corner, 0, hh);
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY + 1) * 100 + 50;
