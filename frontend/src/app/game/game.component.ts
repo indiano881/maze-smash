@@ -38,6 +38,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private maze!: Maze;
   private player = { x: 0, y: 0, hasHammer: false };
   private playerVisual = { x: 0, y: 0 }; // Animated position
+  private playerZCell = { x: 0, y: 0 };  // Cell used for z-index (updates only when movement completes)
   private flag = { x: 0, y: 0, captured: false };
   private hammer = { x: 0, y: 0, pickedUp: false };
   private exit = { x: 0, y: 0 };
@@ -91,21 +92,22 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.app.stage.addChild(this.gameContainer);
 
     // Static container for maze elements (redraws only on maze change)
+    // All sprites must be in the SAME container for z-index sorting to work!
     this.staticContainer = new Container();
     this.staticContainer.sortableChildren = true;
     this.gameContainer.addChild(this.staticContainer);
 
-    // Player graphics (just update position, don't recreate)
+    // Player graphics - must be in staticContainer for z-sorting with walls
     this.playerGraphics = new Graphics();
-    this.gameContainer.addChild(this.playerGraphics);
+    this.staticContainer.addChild(this.playerGraphics);
 
-    // Flag graphics
+    // Flag graphics - must be in staticContainer for z-sorting with walls
     this.flagGraphics = new Graphics();
-    this.gameContainer.addChild(this.flagGraphics);
+    this.staticContainer.addChild(this.flagGraphics);
 
-    // Hammer graphics
+    // Hammer graphics - must be in staticContainer for z-sorting with walls
     this.hammerGraphics = new Graphics();
-    this.gameContainer.addChild(this.hammerGraphics);
+    this.staticContainer.addChild(this.hammerGraphics);
 
     // Hammer sparkles (magic particles)
     for (let i = 0; i < 5; i++) {
@@ -114,7 +116,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       sparkle.fill({ color: 0xffffff, alpha: 0.8 });
       this.hammerSparkles.push(sparkle);
       this.sparkleOffsets.push(Math.random() * 40); // Random starting offset
-      this.gameContainer.addChild(sparkle);
+      this.staticContainer.addChild(sparkle);
     }
   }
 
@@ -183,6 +185,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
         // Snap to final position
         this.playerVisual.x = this.player.x;
         this.playerVisual.y = this.player.y;
+        // Update z-index cell only when movement completes
+        this.playerZCell.x = this.player.x;
+        this.playerZCell.y = this.player.y;
         this.updatePlayerPosition();
       }
 
@@ -214,7 +219,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Position sparkle
       sparkle.x = x + xOffsets[i] * scale;
       sparkle.y = y - this.sparkleOffsets[i] * scale;
-      sparkle.zIndex = (this.hammer.x + this.hammer.y) * 100 + 60;
+      sparkle.zIndex = (this.hammer.x + this.hammer.y) * 100 + 25;
       sparkle.visible = true;
 
       // Fade based on position (fade out at top)
@@ -226,6 +231,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.maze = new Maze(this.MAZE_WIDTH, this.MAZE_HEIGHT);
     this.player = { x: 0, y: 0, hasHammer: false };
     this.playerVisual = { x: 0, y: 0 };
+    this.playerZCell = { x: 0, y: 0 };
     this.flag = {
       x: Math.floor(Math.random() * (this.MAZE_WIDTH - 1)) + 1,
       y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 1)) + 1,
@@ -326,11 +332,21 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Draw static maze elements (only called on maze change)
   private drawMaze(): void {
-    // Clear static container
+    // Clear static container but preserve persistent graphics
+    const persistentGraphics = new Set<Graphics>([
+      this.playerGraphics,
+      this.flagGraphics,
+      this.hammerGraphics,
+      ...this.hammerSparkles
+    ]);
+
     while (this.staticContainer.children.length > 0) {
       const child = this.staticContainer.children[0];
       this.staticContainer.removeChild(child);
-      child.destroy();
+      // Only destroy dynamically created graphics (floors, walls, exit)
+      if (!persistentGraphics.has(child as Graphics)) {
+        child.destroy();
+      }
     }
 
     // Draw floors first
@@ -352,6 +368,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
+    // Re-add persistent graphics to the container
+    this.staticContainer.addChild(this.playerGraphics);
+    this.staticContainer.addChild(this.flagGraphics);
+    this.staticContainer.addChild(this.hammerGraphics);
+    for (const sparkle of this.hammerSparkles) {
+      this.staticContainer.addChild(sparkle);
+    }
+
     // Draw flag and hammer
     this.drawFlagGraphics();
     this.drawHammerGraphics();
@@ -362,7 +386,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     const { x, y } = this.toIso(this.playerVisual.x, this.playerVisual.y);
     this.playerGraphics.x = x;
     this.playerGraphics.y = y;
-    this.playerGraphics.zIndex = (this.playerVisual.x + this.playerVisual.y) * 100 + 50;
+    // Z-index: use the NEXT cell's depth when moving toward camera (down/right)
+    // This ensures player appears behind front walls of destination cell
+    const cellX = Math.floor(this.playerVisual.x + 0.5); // round to nearest
+    const cellY = Math.floor(this.playerVisual.y + 0.5);
+    // Offset +20 keeps player behind front walls (+90) and side corners (+40)
+    this.playerGraphics.zIndex = (cellX + cellY) * 100 + 20;
   }
 
   // Update flag visibility
@@ -399,7 +428,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.flagGraphics.x = x;
     this.flagGraphics.y = y;
-    this.flagGraphics.zIndex = (this.flag.x + this.flag.y) * 100 + 50;
+    this.flagGraphics.zIndex = (this.flag.x + this.flag.y) * 100 + 20;
     this.flagGraphics.visible = !this.flag.captured;
   }
 
@@ -433,7 +462,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     this.hammerGraphics.x = x;
     this.hammerGraphics.y = y;
-    this.hammerGraphics.zIndex = (this.hammer.x + this.hammer.y) * 100 + 50;
+    this.hammerGraphics.zIndex = (this.hammer.x + this.hammer.y) * 100 + 20;
     this.hammerGraphics.visible = !this.hammer.pickedUp;
   }
 
@@ -524,7 +553,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 - 25;
+      wall.zIndex = (gridX + gridY) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
@@ -540,7 +569,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 - 25;
+      wall.zIndex = (gridX + gridY) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
@@ -556,7 +585,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x4a4a4a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 + 75;
+      wall.zIndex = (gridX + gridY + 1) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
@@ -572,7 +601,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.fill({ color: 0x5a5a5a });
       wall.x = x;
       wall.y = y;
-      wall.zIndex = (gridX + gridY) * 100 + 75;
+      wall.zIndex = (gridX + gridY + 1) * 100 - 10;
       this.staticContainer.addChild(wall);
     }
 
@@ -601,43 +630,43 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       corner.fill({ color: 0x8a8a8a });
     };
 
-    // Top corner (0, -hh)
+    // Top corner (0, -hh) - behind player in current cell
     if (cell.walls.top || cell.walls.left) {
       const corner = new Graphics();
       drawCutePillar(corner, 0, -hh);
       corner.x = x;
       corner.y = y;
-      corner.zIndex = (gridX + gridY - 1) * 100 + 50;
+      corner.zIndex = (gridX + gridY - 1) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Right corner (hw, 0)
+    // Right corner (hw, 0) - between back and front
     if (cell.walls.top || cell.walls.right) {
       const corner = new Graphics();
       drawCutePillar(corner, hw, 0);
       corner.x = x;
       corner.y = y;
-      corner.zIndex = (gridX + gridY) * 100 + 50;
+      corner.zIndex = (gridX + gridY) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Left corner (-hw, 0)
+    // Left corner (-hw, 0) - between back and front
     if (cell.walls.left || cell.walls.bottom) {
       const corner = new Graphics();
       drawCutePillar(corner, -hw, 0);
       corner.x = x;
       corner.y = y;
-      corner.zIndex = (gridX + gridY) * 100 + 50;
+      corner.zIndex = (gridX + gridY) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
 
-    // Bottom corner (0, hh)
+    // Bottom corner (0, hh) - in front of player in current cell
     if (cell.walls.bottom || cell.walls.right) {
       const corner = new Graphics();
       drawCutePillar(corner, 0, hh);
       corner.x = x;
       corner.y = y;
-      corner.zIndex = (gridX + gridY + 1) * 100 + 50;
+      corner.zIndex = (gridX + gridY + 1) * 100 + 40;
       this.staticContainer.addChild(corner);
     }
   }
