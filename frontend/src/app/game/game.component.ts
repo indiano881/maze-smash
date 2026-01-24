@@ -29,6 +29,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private app!: Application;
   private gameContainer!: Container;
+  private staticContainer!: Container; // Floor, walls, exit - only redraws on maze change
+  private playerGraphics!: Graphics;   // Player sprite - just moves, no recreate
+  private flagGraphics!: Graphics;     // Flag sprite
   private maze!: Maze;
   private player = { x: 0, y: 0 };
   private playerVisual = { x: 0, y: 0 }; // Animated position
@@ -37,8 +40,8 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private readonly MOVE_SPEED = 0.15; // Lerp factor (0-1, higher = faster)
 
   // Maze config
-  private readonly MAZE_WIDTH = 5;
-  private readonly MAZE_HEIGHT = 5;
+  private readonly MAZE_WIDTH = 10;
+  private readonly MAZE_HEIGHT = 10;
 
   // Tile sizes
   private tileWidth = 80;
@@ -82,6 +85,19 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.gameContainer = new Container();
     this.gameContainer.sortableChildren = true;
     this.app.stage.addChild(this.gameContainer);
+
+    // Static container for maze elements (redraws only on maze change)
+    this.staticContainer = new Container();
+    this.staticContainer.sortableChildren = true;
+    this.gameContainer.addChild(this.staticContainer);
+
+    // Player graphics (just update position, don't recreate)
+    this.playerGraphics = new Graphics();
+    this.gameContainer.addChild(this.playerGraphics);
+
+    // Flag graphics
+    this.flagGraphics = new Graphics();
+    this.gameContainer.addChild(this.flagGraphics);
   }
 
   private calculateSizes(): void {
@@ -110,7 +126,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private onResize(): void {
     if (!this.initialized) return;
     this.calculateSizes();
-    this.draw();
+    this.initPlayerGraphics();
+    this.drawMaze();
+    this.updatePlayerPosition();
   }
 
   // Convert grid to isometric screen coordinates
@@ -142,12 +160,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
         this.playerVisual.x += dx * this.MOVE_SPEED;
         this.playerVisual.y += dy * this.MOVE_SPEED;
-        this.draw();
+        this.updatePlayerPosition();
       } else if (this.playerVisual.x !== this.player.x || this.playerVisual.y !== this.player.y) {
         // Snap to final position
         this.playerVisual.x = this.player.x;
         this.playerVisual.y = this.player.y;
-        this.draw();
+        this.updatePlayerPosition();
       }
     });
   }
@@ -168,7 +186,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.flag.x = Math.max(0, this.exit.x - 1);
     }
 
-    this.draw();
+    this.initPlayerGraphics();
+    this.drawMaze();
+    this.updatePlayerPosition();
+    this.updateFlagVisibility();
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -212,6 +233,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Check flag pickup
     if (!this.flag.captured && this.player.x === this.flag.x && this.player.y === this.flag.y) {
       this.flag.captured = true;
+      this.updateFlagVisibility();
     }
 
     // Check win condition
@@ -223,9 +245,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
-  private draw(): void {
-    // Clear previous graphics
-    this.gameContainer.removeChildren();
+  // Draw static maze elements (only called on maze change)
+  private drawMaze(): void {
+    // Clear static container
+    while (this.staticContainer.children.length > 0) {
+      const child = this.staticContainer.children[0];
+      this.staticContainer.removeChild(child);
+      child.destroy();
+    }
 
     // Draw floors first
     for (let y = 0; y < this.MAZE_HEIGHT; y++) {
@@ -234,7 +261,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       }
     }
 
-    // Draw walls and entities sorted by depth
+    // Draw walls and exit
     for (let y = 0; y < this.MAZE_HEIGHT; y++) {
       for (let x = 0; x < this.MAZE_WIDTH; x++) {
         this.drawWalls(x, y);
@@ -243,16 +270,86 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
         if (this.exit.x === x && this.exit.y === y) {
           this.drawExit(x, y);
         }
-
-        // Draw flag
-        if (!this.flag.captured && this.flag.x === x && this.flag.y === y) {
-          this.drawFlag(x, y);
-        }
       }
     }
 
-    // Draw player separately using visual position for smooth movement
-    this.drawPlayer(this.playerVisual.x, this.playerVisual.y);
+    // Draw flag
+    this.drawFlagGraphics();
+  }
+
+  // Update player position (called every animation frame - no object recreation)
+  private updatePlayerPosition(): void {
+    const { x, y } = this.toIso(this.playerVisual.x, this.playerVisual.y);
+    this.playerGraphics.x = x;
+    this.playerGraphics.y = y;
+    this.playerGraphics.zIndex = (this.playerVisual.x + this.playerVisual.y) * 100 + 50;
+  }
+
+  // Update flag visibility
+  private updateFlagVisibility(): void {
+    this.flagGraphics.visible = !this.flag.captured;
+  }
+
+  // Draw flag graphics (only on maze change)
+  private drawFlagGraphics(): void {
+    const { x, y } = this.toIso(this.flag.x, this.flag.y);
+    const scale = this.tileWidth / 80;
+
+    this.flagGraphics.clear();
+
+    // Glow
+    this.flagGraphics.circle(0, 0, 25 * scale);
+    this.flagGraphics.fill({ color: 0xffd700, alpha: 0.2 });
+
+    // Pole (rounded with caps)
+    this.flagGraphics.roundRect(-2 * scale, -40 * scale, 4 * scale, 45 * scale, 2 * scale);
+    this.flagGraphics.fill({ color: 0x8b4513 });
+    // Pole cap (ornament at top)
+    this.flagGraphics.circle(0, -42 * scale, 3 * scale);
+    this.flagGraphics.fill({ color: 0xdaa520 });
+
+    // Flag cloth (wavy banner)
+    this.flagGraphics.moveTo(2 * scale, -40 * scale);
+    this.flagGraphics.quadraticCurveTo(15 * scale, -42 * scale, 25 * scale, -35 * scale);
+    this.flagGraphics.quadraticCurveTo(22 * scale, -29 * scale, 27 * scale, -25 * scale);
+    this.flagGraphics.quadraticCurveTo(22 * scale, -21 * scale, 25 * scale, -18 * scale);
+    this.flagGraphics.quadraticCurveTo(15 * scale, -16 * scale, 2 * scale, -18 * scale);
+    this.flagGraphics.lineTo(2 * scale, -40 * scale);
+    this.flagGraphics.fill({ color: 0xcc0000 });
+
+    this.flagGraphics.x = x;
+    this.flagGraphics.y = y;
+    this.flagGraphics.zIndex = (this.flag.x + this.flag.y) * 100 + 50;
+    this.flagGraphics.visible = !this.flag.captured;
+  }
+
+  // Create player graphics (only once)
+  private initPlayerGraphics(): void {
+    const scale = this.tileWidth / 80;
+
+    this.playerGraphics.clear();
+
+    // Shadow
+    this.playerGraphics.ellipse(0, 5 * scale, 15 * scale, 8 * scale);
+    this.playerGraphics.fill({ color: 0x000000, alpha: 0.3 });
+
+    // Body
+    this.playerGraphics.ellipse(0, -10 * scale, 12 * scale, 16 * scale);
+    this.playerGraphics.fill({ color: 0x2d5a27 });
+
+    // Head
+    this.playerGraphics.circle(0, -30 * scale, 10 * scale);
+    this.playerGraphics.fill({ color: 0xe8c39e });
+
+    // Torch (rounded handle)
+    this.playerGraphics.roundRect(12 * scale, -35 * scale, 4 * scale, 20 * scale, 2 * scale);
+    this.playerGraphics.fill({ color: 0x8b4513 });
+
+    // Flame
+    this.playerGraphics.ellipse(14 * scale, -42 * scale, 6 * scale, 10 * scale);
+    this.playerGraphics.fill({ color: 0xff6600 });
+    this.playerGraphics.ellipse(14 * scale, -44 * scale, 4 * scale, 7 * scale);
+    this.playerGraphics.fill({ color: 0xffaa00 });
   }
 
   private drawFloor(gridX: number, gridY: number): void {
@@ -273,7 +370,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     floor.x = x;
     floor.y = y;
     floor.zIndex = this.getDepth(gridX, gridY, 'floor');
-    this.gameContainer.addChild(floor);
+    this.staticContainer.addChild(floor);
   }
 
   private drawWalls(gridX: number, gridY: number): void {
@@ -299,7 +396,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 - 25;
-      this.gameContainer.addChild(wall);
+      this.staticContainer.addChild(wall);
     }
 
     // Left wall (blocks X-1 movement) - NW edge - at back of cell
@@ -315,7 +412,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 - 25;
-      this.gameContainer.addChild(wall);
+      this.staticContainer.addChild(wall);
     }
 
     // Bottom wall (blocks Y+1 movement) - SW edge - at front of cell
@@ -331,7 +428,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 + 75;
-      this.gameContainer.addChild(wall);
+      this.staticContainer.addChild(wall);
     }
 
     // Right wall (blocks X+1 movement) - SE edge - at front of cell
@@ -347,7 +444,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       wall.x = x;
       wall.y = y;
       wall.zIndex = (gridX + gridY) * 100 + 75;
-      this.gameContainer.addChild(wall);
+      this.staticContainer.addChild(wall);
     }
 
     // Corner connectors - cute rounded bubble pillars at grid corners
@@ -382,7 +479,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY - 1) * 100 + 50;
-      this.gameContainer.addChild(corner);
+      this.staticContainer.addChild(corner);
     }
 
     // Right corner (hw, 0)
@@ -392,7 +489,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 50;
-      this.gameContainer.addChild(corner);
+      this.staticContainer.addChild(corner);
     }
 
     // Left corner (-hw, 0)
@@ -402,7 +499,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY) * 100 + 50;
-      this.gameContainer.addChild(corner);
+      this.staticContainer.addChild(corner);
     }
 
     // Bottom corner (0, hh)
@@ -412,74 +509,8 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       corner.x = x;
       corner.y = y;
       corner.zIndex = (gridX + gridY + 1) * 100 + 50;
-      this.gameContainer.addChild(corner);
+      this.staticContainer.addChild(corner);
     }
-  }
-
-  private drawPlayer(gridX: number, gridY: number): void {
-    const { x, y } = this.toIso(gridX, gridY);
-    const scale = this.tileWidth / 80;
-
-    const player = new Graphics();
-
-    // Shadow
-    player.ellipse(0, 5 * scale, 15 * scale, 8 * scale);
-    player.fill({ color: 0x000000, alpha: 0.3 });
-
-    // Body
-    player.ellipse(0, -10 * scale, 12 * scale, 16 * scale);
-    player.fill({ color: 0x2d5a27 });
-
-    // Head
-    player.circle(0, -30 * scale, 10 * scale);
-    player.fill({ color: 0xe8c39e });
-
-    // Torch (rounded handle)
-    player.roundRect(12 * scale, -35 * scale, 4 * scale, 20 * scale, 2 * scale);
-    player.fill({ color: 0x8b4513 });
-
-    // Flame
-    player.ellipse(14 * scale, -42 * scale, 6 * scale, 10 * scale);
-    player.fill({ color: 0xff6600 });
-    player.ellipse(14 * scale, -44 * scale, 4 * scale, 7 * scale);
-    player.fill({ color: 0xffaa00 });
-
-    player.x = x;
-    player.y = y;
-    player.zIndex = this.getDepth(gridX, gridY, 'sprite');
-    this.gameContainer.addChild(player);
-  }
-
-  private drawFlag(gridX: number, gridY: number): void {
-    const { x, y } = this.toIso(gridX, gridY);
-    const scale = this.tileWidth / 80;
-
-    const flag = new Graphics();
-
-    // Glow
-    flag.circle(0, 0, 25 * scale);
-    flag.fill({ color: 0xffd700, alpha: 0.2 });
-
-    // Pole (rounded with caps)
-    flag.roundRect(-2 * scale, -40 * scale, 4 * scale, 45 * scale, 2 * scale);
-    flag.fill({ color: 0x8b4513 });
-    // Pole cap (ornament at top)
-    flag.circle(0, -42 * scale, 3 * scale);
-    flag.fill({ color: 0xdaa520 });
-
-    // Flag cloth (wavy banner)
-    flag.moveTo(2 * scale, -40 * scale);
-    flag.quadraticCurveTo(15 * scale, -42 * scale, 25 * scale, -35 * scale);
-    flag.quadraticCurveTo(22 * scale, -29 * scale, 27 * scale, -25 * scale);
-    flag.quadraticCurveTo(22 * scale, -21 * scale, 25 * scale, -18 * scale);
-    flag.quadraticCurveTo(15 * scale, -16 * scale, 2 * scale, -18 * scale);
-    flag.lineTo(2 * scale, -40 * scale);
-    flag.fill({ color: 0xcc0000 });
-
-    flag.x = x;
-    flag.y = y;
-    flag.zIndex = this.getDepth(gridX, gridY, 'sprite');
-    this.gameContainer.addChild(flag);
   }
 
   private drawExit(gridX: number, gridY: number): void {
@@ -519,6 +550,6 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     exit.x = x;
     exit.y = y;
     exit.zIndex = this.getDepth(gridX, gridY, 'sprite');
-    this.gameContainer.addChild(exit);
+    this.staticContainer.addChild(exit);
   }
 }
