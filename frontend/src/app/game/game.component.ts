@@ -31,8 +31,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private gameContainer!: Container;
   private maze!: Maze;
   private player = { x: 0, y: 0 };
+  private playerVisual = { x: 0, y: 0 }; // Animated position
   private flag = { x: 0, y: 0, captured: false };
   private exit = { x: 0, y: 0 };
+  private readonly MOVE_SPEED = 0.15; // Lerp factor (0-1, higher = faster)
 
   // Maze config
   private readonly MAZE_WIDTH = 5;
@@ -56,6 +58,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     await this.initPixi();
     this.calculateSizes();
     this.generateNewMaze();
+    this.startAnimationLoop();
     this.initialized = true;
   }
 
@@ -69,7 +72,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.app = new Application();
 
     await this.app.init({
-      background: '#0a0808',
+      background: '#000000',
       resizeTo: undefined,
       antialias: true,
     });
@@ -130,9 +133,29 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     }
   }
 
+  private startAnimationLoop(): void {
+    this.app.ticker.add(() => {
+      // Lerp visual position toward target grid position
+      const dx = this.player.x - this.playerVisual.x;
+      const dy = this.player.y - this.playerVisual.y;
+
+      if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
+        this.playerVisual.x += dx * this.MOVE_SPEED;
+        this.playerVisual.y += dy * this.MOVE_SPEED;
+        this.draw();
+      } else if (this.playerVisual.x !== this.player.x || this.playerVisual.y !== this.player.y) {
+        // Snap to final position
+        this.playerVisual.x = this.player.x;
+        this.playerVisual.y = this.player.y;
+        this.draw();
+      }
+    });
+  }
+
   generateNewMaze(): void {
     this.maze = new Maze(this.MAZE_WIDTH, this.MAZE_HEIGHT);
     this.player = { x: 0, y: 0 };
+    this.playerVisual = { x: 0, y: 0 };
     this.flag = {
       x: Math.floor(Math.random() * (this.MAZE_WIDTH - 1)) + 1,
       y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 1)) + 1,
@@ -182,7 +205,6 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.player.x = newX;
       this.player.y = newY;
       this.checkPickups();
-      this.draw();
     }
   }
 
@@ -226,13 +248,11 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
         if (!this.flag.captured && this.flag.x === x && this.flag.y === y) {
           this.drawFlag(x, y);
         }
-
-        // Draw player
-        if (this.player.x === x && this.player.y === y) {
-          this.drawPlayer(x, y);
-        }
       }
     }
+
+    // Draw player separately using visual position for smooth movement
+    this.drawPlayer(this.playerVisual.x, this.playerVisual.y);
   }
 
   private drawFloor(gridX: number, gridY: number): void {
@@ -268,22 +288,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Top wall (blocks Y-1 movement) - NE edge (from top corner to right corner)
     if (cell.walls.top === true) {
       const wall = new Graphics();
-      // Front face
-      wall.poly([
-        { x: 0, y: -hh },        // top corner
-        { x: hw, y: 0 },         // right corner
-        { x: hw, y: -wh },       // right corner raised
-        { x: 0, y: -hh - wh },   // top corner raised
-      ]);
+      const capRadius = wh * 0.4;
+      // Front face with rounded ends
+      wall.moveTo(capRadius * 0.5, -hh - capRadius * 0.25);
+      wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
+      wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
+      wall.lineTo(capRadius * 0.5, -hh - wh + capRadius * 0.25);
+      wall.quadraticCurveTo(-capRadius * 0.3, -hh - wh * 0.5, capRadius * 0.5, -hh - capRadius * 0.25);
       wall.fill({ color: 0x4a4a4a });
-      // Top face
-      wall.poly([
-        { x: 0, y: -hh - wh },
-        { x: hw, y: -wh },
-        { x: hw - 4, y: -wh },
-        { x: -4, y: -hh - wh },
-      ]);
-      wall.fill({ color: 0x7a7a7a });
       wall.x = x;
       wall.y = y;
       wall.zIndex = this.getDepth(gridX, gridY, 'frontWall');
@@ -293,22 +305,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Left wall (blocks X-1 movement) - NW edge (from left corner to top corner)
     if (cell.walls.left) {
       const wall = new Graphics();
-      // Front face (visible)
-      wall.poly([
-        { x: -hw, y: 0 },        // left corner
-        { x: 0, y: -hh },        // top corner
-        { x: 0, y: -hh - wh },   // top corner raised
-        { x: -hw, y: -wh },      // left corner raised
-      ]);
+      const capRadius = wh * 0.4;
+      // Front face with rounded ends
+      wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
+      wall.lineTo(-capRadius * 0.5, -hh - capRadius * 0.25);
+      wall.quadraticCurveTo(capRadius * 0.3, -hh - wh * 0.5, -capRadius * 0.5, -hh - wh + capRadius * 0.25);
+      wall.lineTo(-hw + capRadius * 0.5, -wh + capRadius * 0.25);
+      wall.quadraticCurveTo(-hw - capRadius * 0.3, -wh * 0.5, -hw + capRadius * 0.5, -capRadius * 0.25);
       wall.fill({ color: 0x5a5a5a });
-      // Top face
-      wall.poly([
-        { x: -hw, y: -wh },
-        { x: 0, y: -hh - wh },
-        { x: 4, y: -hh - wh },
-        { x: -hw + 4, y: -wh },
-      ]);
-      wall.fill({ color: 0x7a7a7a });
       wall.x = x;
       wall.y = y;
       wall.zIndex = this.getDepth(gridX, gridY, 'backWall');
@@ -318,22 +322,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Bottom wall (blocks Y+1 movement) - SW edge (from left corner to bottom corner)
     if (cell.walls.bottom) {
       const wall = new Graphics();
-      // Front face (visible)
-      wall.poly([
-        { x: -hw, y: 0 },        // left corner
-        { x: 0, y: hh },         // bottom corner
-        { x: 0, y: hh - wh },    // bottom corner raised
-        { x: -hw, y: -wh },      // left corner raised
-      ]);
+      const capRadius = wh * 0.4;
+      // Front face with rounded ends
+      wall.moveTo(-hw + capRadius * 0.5, -capRadius * 0.25);
+      wall.lineTo(-capRadius * 0.5, hh - capRadius * 0.25);
+      wall.quadraticCurveTo(capRadius * 0.3, hh - wh * 0.5, -capRadius * 0.5, hh - wh + capRadius * 0.25);
+      wall.lineTo(-hw + capRadius * 0.5, -wh + capRadius * 0.25);
+      wall.quadraticCurveTo(-hw - capRadius * 0.3, -wh * 0.5, -hw + capRadius * 0.5, -capRadius * 0.25);
       wall.fill({ color: 0x4a4a4a });
-      // Top face
-      wall.poly([
-        { x: -hw, y: -wh },
-        { x: 0, y: hh - wh },
-        { x: 4, y: hh - wh },
-        { x: -hw + 4, y: -wh },
-      ]);
-      wall.fill({ color: 0x7a7a7a });
       wall.x = x;
       wall.y = y;
       wall.zIndex = this.getDepth(gridX, gridY, 'backWall');
@@ -343,26 +339,82 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Right wall (blocks X+1 movement) - SE edge (from bottom corner to right corner)
     if (cell.walls.right) {
       const wall = new Graphics();
-      // Front face
-      wall.poly([
-        { x: 0, y: hh },         // bottom corner
-        { x: hw, y: 0 },         // right corner
-        { x: hw, y: -wh },       // right corner raised
-        { x: 0, y: hh - wh },    // bottom corner raised
-      ]);
+      const capRadius = wh * 0.4;
+      // Front face with rounded ends
+      wall.moveTo(capRadius * 0.5, hh - capRadius * 0.25);
+      wall.lineTo(hw - capRadius * 0.5, -capRadius * 0.25);
+      wall.quadraticCurveTo(hw + capRadius * 0.3, -wh * 0.5, hw - capRadius * 0.5, -wh + capRadius * 0.25);
+      wall.lineTo(capRadius * 0.5, hh - wh + capRadius * 0.25);
+      wall.quadraticCurveTo(-capRadius * 0.3, hh - wh * 0.5, capRadius * 0.5, hh - capRadius * 0.25);
       wall.fill({ color: 0x5a5a5a });
-      // Top face
-      wall.poly([
-        { x: 0, y: hh - wh },
-        { x: hw, y: -wh },
-        { x: hw - 4, y: -wh },
-        { x: -4, y: hh - wh },
-      ]);
-      wall.fill({ color: 0x7a7a7a });
       wall.x = x;
       wall.y = y;
       wall.zIndex = this.getDepth(gridX, gridY, 'frontWall');
       this.gameContainer.addChild(wall);
+    }
+
+    // Corner connectors - rounded pillars where walls meet
+    // z-index based on corner's actual isometric position for proper depth sorting with player
+    const pillarRadius = wh * 0.35;
+
+    // Top corner (where top wall meets left wall) - behind the cell center
+    if (cell.walls.top || cell.walls.left) {
+      const corner = new Graphics();
+      corner.ellipse(0, -hh, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.rect(-pillarRadius, -hh, pillarRadius * 2, -wh + pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.ellipse(0, -hh - wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.x = x;
+      corner.y = y;
+      corner.zIndex = (gridX + gridY - 1) * 100 + 50;
+      this.gameContainer.addChild(corner);
+    }
+
+    // Right corner (where top wall meets right wall) - same depth as cell
+    if (cell.walls.top || cell.walls.right) {
+      const corner = new Graphics();
+      corner.ellipse(hw, 0, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.rect(hw - pillarRadius, 0, pillarRadius * 2, -wh + pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.ellipse(hw, -wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.x = x;
+      corner.y = y;
+      corner.zIndex = (gridX + gridY) * 100 + 50;
+      this.gameContainer.addChild(corner);
+    }
+
+    // Left corner (where left wall meets bottom wall) - same depth as cell
+    if (cell.walls.left || cell.walls.bottom) {
+      const corner = new Graphics();
+      corner.ellipse(-hw, 0, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.rect(-hw - pillarRadius, 0, pillarRadius * 2, -wh + pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.ellipse(-hw, -wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.x = x;
+      corner.y = y;
+      corner.zIndex = (gridX + gridY) * 100 + 50;
+      this.gameContainer.addChild(corner);
+    }
+
+    // Bottom corner (where bottom wall meets right wall) - in front of the cell center
+    if (cell.walls.bottom || cell.walls.right) {
+      const corner = new Graphics();
+      corner.ellipse(0, hh, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.rect(-pillarRadius, hh, pillarRadius * 2, -wh + pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.ellipse(0, hh - wh + pillarRadius * 0.5, pillarRadius, pillarRadius * 0.5);
+      corner.fill({ color: 0x5a5a5a });
+      corner.x = x;
+      corner.y = y;
+      corner.zIndex = (gridX + gridY + 1) * 100 + 50;
+      this.gameContainer.addChild(corner);
     }
   }
 
@@ -384,8 +436,8 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     player.circle(0, -30 * scale, 10 * scale);
     player.fill({ color: 0xe8c39e });
 
-    // Torch
-    player.rect(12 * scale, -35 * scale, 4 * scale, 20 * scale);
+    // Torch (rounded handle)
+    player.roundRect(12 * scale, -35 * scale, 4 * scale, 20 * scale, 2 * scale);
     player.fill({ color: 0x8b4513 });
 
     // Flame
@@ -410,18 +462,20 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     flag.circle(0, 0, 25 * scale);
     flag.fill({ color: 0xffd700, alpha: 0.2 });
 
-    // Pole
-    flag.rect(-2 * scale, -40 * scale, 4 * scale, 45 * scale);
+    // Pole (rounded with caps)
+    flag.roundRect(-2 * scale, -40 * scale, 4 * scale, 45 * scale, 2 * scale);
     flag.fill({ color: 0x8b4513 });
+    // Pole cap (ornament at top)
+    flag.circle(0, -42 * scale, 3 * scale);
+    flag.fill({ color: 0xdaa520 });
 
-    // Flag cloth
-    flag.poly([
-      { x: 2 * scale, y: -40 * scale },
-      { x: 25 * scale, y: -32 * scale },
-      { x: 20 * scale, y: -25 * scale },
-      { x: 25 * scale, y: -18 * scale },
-      { x: 2 * scale, y: -18 * scale },
-    ]);
+    // Flag cloth (wavy banner)
+    flag.moveTo(2 * scale, -40 * scale);
+    flag.quadraticCurveTo(15 * scale, -42 * scale, 25 * scale, -35 * scale);
+    flag.quadraticCurveTo(22 * scale, -29 * scale, 27 * scale, -25 * scale);
+    flag.quadraticCurveTo(22 * scale, -21 * scale, 25 * scale, -18 * scale);
+    flag.quadraticCurveTo(15 * scale, -16 * scale, 2 * scale, -18 * scale);
+    flag.lineTo(2 * scale, -40 * scale);
     flag.fill({ color: 0xcc0000 });
 
     flag.x = x;
@@ -440,22 +494,28 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     exit.circle(0, -20 * scale, 40 * scale);
     exit.fill({ color: 0xffd700, alpha: 0.3 });
 
-    // Archway pillars
-    exit.rect(-20 * scale, -55 * scale, 8 * scale, 60 * scale);
+    // Archway pillars (rounded columns)
+    exit.roundRect(-20 * scale, -55 * scale, 8 * scale, 60 * scale, 4 * scale);
     exit.fill({ color: 0x4a4a4a });
-    exit.rect(12 * scale, -55 * scale, 8 * scale, 60 * scale);
+    // Left pillar cap
+    exit.ellipse(-16 * scale, -55 * scale, 5 * scale, 3 * scale);
+    exit.fill({ color: 0x6a6a6a });
+    exit.roundRect(12 * scale, -55 * scale, 8 * scale, 60 * scale, 4 * scale);
     exit.fill({ color: 0x4a4a4a });
+    // Right pillar cap
+    exit.ellipse(16 * scale, -55 * scale, 5 * scale, 3 * scale);
+    exit.fill({ color: 0x6a6a6a });
 
-    // Arch top
+    // Arch top (rounded)
     exit.arc(0, -55 * scale, 16 * scale, Math.PI, 0);
     exit.fill({ color: 0x4a4a4a });
 
-    // Dark doorway
-    exit.rect(-12 * scale, -50 * scale, 24 * scale, 52 * scale);
+    // Dark doorway (rounded)
+    exit.roundRect(-12 * scale, -50 * scale, 24 * scale, 52 * scale, 6 * scale);
     exit.fill({ color: 0x0a0505 });
 
-    // Light glow inside
-    exit.rect(-8 * scale, -45 * scale, 16 * scale, 45 * scale);
+    // Light glow inside (rounded)
+    exit.roundRect(-8 * scale, -45 * scale, 16 * scale, 45 * scale, 4 * scale);
     exit.fill({ color: 0xffd700, alpha: 0.15 });
 
     exit.x = x;
