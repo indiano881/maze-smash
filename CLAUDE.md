@@ -18,7 +18,7 @@ This is a learning project for: Angular, Go, Terraform, and GCP.
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Angular 18+ with HTML Canvas |
+| Frontend | Angular 18+ with PixiJS |
 | Backend API | Go + Gin framework |
 | Real-time | Go + gorilla/websocket |
 | Database | Firestore |
@@ -28,22 +28,17 @@ This is a learning project for: Angular, Go, Terraform, and GCP.
 
 ```bash
 # Frontend
-cd frontend && ng serve              # Dev server at localhost:4200
-cd frontend && ng build              # Production build
-cd frontend && ng test               # Run tests
+cd frontend && npm start            # Dev server at localhost:4200
+cd frontend && npm run build        # Production build
 
-# Backend API
-cd backend && go run cmd/server/main.go     # Run server
-cd backend && go test ./...                 # Run all tests
-cd backend && go test ./internal/handlers   # Run specific package tests
+# Backend API (not yet implemented)
+cd backend && go run cmd/server/main.go
 
-# WebSocket Server
+# WebSocket Server (not yet implemented)
 cd websocket-server && go run cmd/server/main.go
-cd websocket-server && go test ./...
 
-# Docker
-docker-compose up --build            # Start all services
-docker-compose down                  # Stop all services
+# Docker (not yet configured)
+docker-compose up --build
 
 # Terraform
 cd infrastructure && terraform init
@@ -51,7 +46,23 @@ cd infrastructure && terraform plan
 cd infrastructure && terraform apply
 ```
 
-## Architecture
+## Frontend Architecture
+
+### Key Files
+- `frontend/src/app/game/game.component.ts` - Main game component with PixiJS rendering
+- `frontend/src/app/game/maze.ts` - Maze generation using recursive backtracking
+
+### Rendering
+- Uses PixiJS 8 for isometric 2.5D rendering
+- Grid-to-screen conversion via `toIso(x, y)` method
+- Depth sorting with `zIndex` for proper layering (floor → walls → sprites)
+
+### Maze System
+- `Maze` class generates mazes using recursive backtracking algorithm
+- `Cell` interface tracks walls on all four sides
+- `canMove()` validates movement against wall state
+
+## Planned Architecture
 
 ### Service Communication
 ```
@@ -61,7 +72,7 @@ Browser <--HTTP--> Backend API (Gin)     <---> Firestore
                     (game state @ 30 ticks/sec)
 ```
 
-### WebSocket Protocol
+### WebSocket Protocol (Planned)
 
 Client to Server:
 - `{"type": "join", "roomId": "xxx", "playerId": "xxx"}`
@@ -74,7 +85,7 @@ Server to Client:
 - `{"type": "playerLeft", "playerId": "xxx"}`
 - `{"type": "gameOver", "winner": "xxx", "reason": "flag|kill"}`
 
-### REST API Endpoints
+### REST API Endpoints (Planned)
 
 ```
 GET  /api/health          # Health check
@@ -85,10 +96,10 @@ POST /api/rooms/:id/join  # Join a room
 
 ## Game Mechanics
 
-- **Fog of war**: Player sees ~3 tiles around them
+- **Fog of war**: Player sees ~3 tiles around them (not yet implemented)
 - **Random maze generation** each match
 - **Win conditions**: Capture flag + escape through exit, or kill opponent
-- **Movement**: Free WASD movement
+- **Movement**: WASD or arrow keys
 
 ## Current Status
 
