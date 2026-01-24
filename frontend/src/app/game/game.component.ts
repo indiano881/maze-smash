@@ -96,6 +96,23 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   };
   private exit = { x: 0, y: 0 };
 
+  // Mole enemy state
+  private mole = {
+    x: 0, y: 0,
+    burrowed: true,
+    popupProgress: 0,      // 0-1 for animation
+    burrowProgress: 0,     // 0-1 for burrow animation
+    lastPopupTime: 0,
+    popupInterval: 3000,   // ms between popups
+    surfaceDuration: 2000, // ms to stay surfaced
+    surfaceTime: 0,        // when mole surfaced
+    active: true
+  };
+  private moleGraphics!: Graphics;
+  private moleDirtGraphics!: Graphics;  // Dirt mound VFX
+  private moleDirtParticles: Graphics[] = [];
+  private moleDirtOffsets: number[] = [];
+
   // Fog of war settings
   private readonly BASE_VISIBILITY = 5;     // Default view radius (tiles)
   private readonly TORCH_VISIBILITY = 10;   // Expanded view radius with big torch (full maze)
@@ -227,6 +244,24 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.iceProjectileGraphics = new Graphics();
     this.iceProjectileGraphics.visible = false;
     this.staticContainer.addChild(this.iceProjectileGraphics);
+
+    // Mole graphics (enemy that burrows)
+    this.moleGraphics = new Graphics();
+    this.staticContainer.addChild(this.moleGraphics);
+
+    // Mole dirt mound graphics
+    this.moleDirtGraphics = new Graphics();
+    this.staticContainer.addChild(this.moleDirtGraphics);
+
+    // Mole dirt particles (brown particles when surfacing)
+    for (let i = 0; i < 5; i++) {
+      const particle = new Graphics();
+      particle.circle(0, 0, 3);
+      particle.fill({ color: 0x8B6F47, alpha: 0.9 });
+      this.moleDirtParticles.push(particle);
+      this.moleDirtOffsets.push(Math.random() * 30);
+      this.staticContainer.addChild(particle);
+    }
 
     // Fog of war container (drawn on top of everything except HUD)
     this.fogContainer = new Container();
@@ -366,6 +401,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Update fog of war
       this.updateFog();
+
+      // Update mole enemy
+      this.updateMoleAnimation();
+      this.drawMoleGraphics();
+      this.animateMoleDirtParticles();
+      this.checkMoleCollision();
     });
   }
 
@@ -790,6 +831,37 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.iceShard.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
     }
 
+    // Initialize mole position (enemy)
+    this.mole = {
+      x: Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1,
+      y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1,
+      burrowed: true,
+      popupProgress: 0,
+      burrowProgress: 0,
+      lastPopupTime: Date.now(),
+      popupInterval: 3000,
+      surfaceDuration: 2000,
+      surfaceTime: 0,
+      active: true
+    };
+
+    // Ensure mole isn't at other entities
+    while ((this.mole.x === this.flag.x && this.mole.y === this.flag.y) ||
+           (this.mole.x === this.exit.x && this.mole.y === this.exit.y) ||
+           (this.mole.x === this.hammer.x && this.mole.y === this.hammer.y) ||
+           (this.mole.x === this.cloak.x && this.mole.y === this.cloak.y) ||
+           (this.mole.x === this.bigTorch.x && this.mole.y === this.bigTorch.y) ||
+           (this.mole.x === this.iceShard.x && this.mole.y === this.iceShard.y) ||
+           (this.mole.x === 0 && this.mole.y === 0)) {
+      this.mole.x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+      this.mole.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+    }
+
+    // Reset mole dirt particle offsets
+    for (let i = 0; i < this.moleDirtOffsets.length; i++) {
+      this.moleDirtOffsets[i] = Math.random() * 30;
+    }
+
     // Reset invisibility, torch power, and ice projectile
     this.invisibility = { active: false, endTime: 0 };
     this.torchPower = { active: false, endTime: 0 };
@@ -1011,7 +1083,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       ...this.bigTorchSparkles,
       this.iceShardGraphics,
       ...this.iceShardSparkles,
-      this.iceProjectileGraphics
+      this.iceProjectileGraphics,
+      this.moleGraphics,
+      this.moleDirtGraphics,
+      ...this.moleDirtParticles
     ]);
 
     while (this.staticContainer.children.length > 0) {
@@ -1062,13 +1137,20 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.staticContainer.addChild(sparkle);
     }
     this.staticContainer.addChild(this.iceProjectileGraphics);
+    this.staticContainer.addChild(this.moleGraphics);
+    this.staticContainer.addChild(this.moleDirtGraphics);
+    for (const particle of this.moleDirtParticles) {
+      this.staticContainer.addChild(particle);
+    }
 
-    // Draw flag, hammer, cloak, big torch, and ice shard
+    // Draw flag, hammer, cloak, big torch, ice shard, and mole
     this.drawFlagGraphics();
     this.drawHammerGraphics();
     this.drawCloakGraphics();
     this.drawBigTorchGraphics();
     this.drawIceShardGraphics();
+    this.drawMoleDirtMound();
+    this.drawMoleGraphics();
   }
 
   // Update player position (called every animation frame - no object recreation)
@@ -1977,6 +2059,289 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Highlight
       this.hudSlot4.circle(slotRadius, slotRadius - 6, 2);
       this.hudSlot4.fill({ color: 0xffffff, alpha: 0.8 });
+    }
+  }
+
+  // Mole enemy update and drawing methods
+
+  private updateMoleAnimation(): void {
+    if (!this.mole.active) return;
+
+    const now = Date.now();
+
+    if (this.mole.burrowed) {
+      // Check if it's time to popup
+      if (now - this.mole.lastPopupTime >= this.mole.popupInterval) {
+        // Start surfacing
+        this.mole.burrowed = false;
+        this.mole.popupProgress = 0;
+        this.mole.burrowProgress = 0;
+        this.mole.surfaceTime = 0;
+      }
+    } else if (this.mole.popupProgress < 1) {
+      // Surfacing animation (500ms)
+      this.mole.popupProgress += 1 / 30; // ~500ms at 60fps
+      if (this.mole.popupProgress >= 1) {
+        this.mole.popupProgress = 1;
+        this.mole.surfaceTime = now;
+      }
+    } else if (this.mole.burrowProgress === 0) {
+      // Fully surfaced - check if it's time to burrow
+      if (now - this.mole.surfaceTime >= this.mole.surfaceDuration) {
+        // Start burrowing
+        this.mole.burrowProgress = 0.01; // Start burrow animation
+      }
+    } else if (this.mole.burrowProgress < 1) {
+      // Burrowing animation (300ms)
+      this.mole.burrowProgress += 1 / 18; // ~300ms at 60fps
+      if (this.mole.burrowProgress >= 1) {
+        // Fully burrowed - move to new position
+        this.mole.burrowed = true;
+        this.mole.popupProgress = 0;
+        this.mole.burrowProgress = 0;
+        this.mole.lastPopupTime = now;
+        this.moveMoleToNewPosition();
+      }
+    }
+  }
+
+  private moveMoleToNewPosition(): void {
+    // Try to move toward player or to a random adjacent tile
+    const directions = [
+      { dx: 0, dy: -1 }, // up
+      { dx: 0, dy: 1 },  // down
+      { dx: -1, dy: 0 }, // left
+      { dx: 1, dy: 0 }   // right
+    ];
+
+    // Filter valid moves
+    const validMoves = directions.filter(d => {
+      const newX = this.mole.x + d.dx;
+      const newY = this.mole.y + d.dy;
+      return this.maze.canMove(this.mole.x, this.mole.y, newX, newY);
+    });
+
+    if (validMoves.length === 0) return;
+
+    // 50% chance to move toward player, 50% random
+    if (Math.random() < 0.5) {
+      // Move toward player
+      const toPlayer = validMoves.sort((a, b) => {
+        const distA = Math.abs(this.mole.x + a.dx - this.player.x) +
+                      Math.abs(this.mole.y + a.dy - this.player.y);
+        const distB = Math.abs(this.mole.x + b.dx - this.player.x) +
+                      Math.abs(this.mole.y + b.dy - this.player.y);
+        return distA - distB;
+      });
+      const move = toPlayer[0];
+      this.mole.x += move.dx;
+      this.mole.y += move.dy;
+    } else {
+      // Random move
+      const move = validMoves[Math.floor(Math.random() * validMoves.length)];
+      this.mole.x += move.dx;
+      this.mole.y += move.dy;
+    }
+
+    // Update dirt mound position
+    this.drawMoleDirtMound();
+  }
+
+  private drawMoleGraphics(): void {
+    if (!this.mole.active) {
+      this.moleGraphics.visible = false;
+      return;
+    }
+
+    const { x, y } = this.toIso(this.mole.x, this.mole.y);
+    const scale = this.tileWidth / 80;
+
+    this.moleGraphics.clear();
+
+    // Calculate Y offset based on popup/burrow progress
+    let yOffset = 30 * scale; // Fully underground
+    if (!this.mole.burrowed) {
+      if (this.mole.burrowProgress > 0) {
+        // Burrowing down
+        yOffset = this.mole.burrowProgress * 30 * scale;
+      } else {
+        // Surfacing or surfaced
+        yOffset = (1 - this.mole.popupProgress) * 30 * scale;
+      }
+    }
+
+    // Only draw mole if visible (not fully burrowed)
+    if (this.mole.burrowed) {
+      this.moleGraphics.visible = false;
+      return;
+    }
+
+    this.moleGraphics.visible = true;
+
+    // Dark brown oval body with outline
+    this.moleGraphics.ellipse(0, -12 * scale + yOffset, 16 * scale, 12 * scale);
+    this.moleGraphics.fill({ color: 0x4A3728 });
+    this.moleGraphics.stroke({ color: 0x1A1A1A, width: 2 });
+
+    // Lighter belly
+    this.moleGraphics.ellipse(0, -8 * scale + yOffset, 10 * scale, 6 * scale);
+    this.moleGraphics.fill({ color: 0x6B5344 });
+
+    // Pink nose
+    this.moleGraphics.circle(0, -2 * scale + yOffset, 4 * scale);
+    this.moleGraphics.fill({ color: 0xFFB6C1 });
+
+    // Black sunglasses
+    // Left lens
+    this.moleGraphics.roundRect(-10 * scale, -18 * scale + yOffset, 8 * scale, 5 * scale, 2 * scale);
+    this.moleGraphics.fill({ color: 0x1A1A1A });
+    // Right lens
+    this.moleGraphics.roundRect(2 * scale, -18 * scale + yOffset, 8 * scale, 5 * scale, 2 * scale);
+    this.moleGraphics.fill({ color: 0x1A1A1A });
+    // Bridge
+    this.moleGraphics.roundRect(-2 * scale, -16 * scale + yOffset, 4 * scale, 2 * scale, 1 * scale);
+    this.moleGraphics.fill({ color: 0x1A1A1A });
+
+    // Lens shine
+    this.moleGraphics.circle(-7 * scale, -17 * scale + yOffset, 2 * scale);
+    this.moleGraphics.fill({ color: 0x444444 });
+    this.moleGraphics.circle(5 * scale, -17 * scale + yOffset, 2 * scale);
+    this.moleGraphics.fill({ color: 0x444444 });
+
+    // Front paws (visible when surfaced)
+    if (this.mole.popupProgress > 0.5) {
+      // Left paw
+      this.moleGraphics.ellipse(-12 * scale, 2 * scale + yOffset, 5 * scale, 3 * scale);
+      this.moleGraphics.fill({ color: 0x3A2718 });
+      // Right paw
+      this.moleGraphics.ellipse(12 * scale, 2 * scale + yOffset, 5 * scale, 3 * scale);
+      this.moleGraphics.fill({ color: 0x3A2718 });
+    }
+
+    this.moleGraphics.x = x;
+    this.moleGraphics.y = y;
+    this.moleGraphics.zIndex = (this.mole.x + this.mole.y) * 100 + 25;
+  }
+
+  private drawMoleDirtMound(): void {
+    if (!this.mole.active) {
+      this.moleDirtGraphics.visible = false;
+      return;
+    }
+
+    const { x, y } = this.toIso(this.mole.x, this.mole.y);
+    const scale = this.tileWidth / 80;
+
+    this.moleDirtGraphics.clear();
+    this.moleDirtGraphics.visible = true;
+
+    // Brown dirt mound ellipse
+    this.moleDirtGraphics.ellipse(0, 5 * scale, 20 * scale, 8 * scale);
+    this.moleDirtGraphics.fill({ color: 0x8B6F47 });
+    this.moleDirtGraphics.stroke({ color: 0x5A4530, width: 1 });
+
+    // Dirt texture lines (cracks)
+    this.moleDirtGraphics.moveTo(-8 * scale, 3 * scale);
+    this.moleDirtGraphics.lineTo(-4 * scale, 7 * scale);
+    this.moleDirtGraphics.stroke({ color: 0x5A4530, width: 1 });
+
+    this.moleDirtGraphics.moveTo(3 * scale, 2 * scale);
+    this.moleDirtGraphics.lineTo(8 * scale, 8 * scale);
+    this.moleDirtGraphics.stroke({ color: 0x5A4530, width: 1 });
+
+    // Small dirt lumps
+    this.moleDirtGraphics.ellipse(-10 * scale, 8 * scale, 4 * scale, 2 * scale);
+    this.moleDirtGraphics.fill({ color: 0x7A5F37 });
+    this.moleDirtGraphics.ellipse(12 * scale, 6 * scale, 3 * scale, 2 * scale);
+    this.moleDirtGraphics.fill({ color: 0x7A5F37 });
+
+    this.moleDirtGraphics.x = x;
+    this.moleDirtGraphics.y = y;
+    this.moleDirtGraphics.zIndex = (this.mole.x + this.mole.y) * 100 + 5;
+  }
+
+  private animateMoleDirtParticles(): void {
+    // Only show particles when mole is surfacing
+    const showParticles = !this.mole.burrowed && this.mole.popupProgress < 1 && this.mole.popupProgress > 0;
+
+    if (!showParticles) {
+      this.moleDirtParticles.forEach(p => p.visible = false);
+      return;
+    }
+
+    const { x, y } = this.toIso(this.mole.x, this.mole.y);
+    const scale = this.tileWidth / 80;
+    const xOffsets = [-15, -7, 0, 7, 15];
+
+    this.moleDirtParticles.forEach((particle, i) => {
+      // Move particle upward
+      this.moleDirtOffsets[i] += 1.5;
+
+      // Reset when reaching top
+      if (this.moleDirtOffsets[i] > 35) {
+        this.moleDirtOffsets[i] = 0;
+      }
+
+      // Position particle
+      particle.x = x + xOffsets[i] * scale;
+      particle.y = y - this.moleDirtOffsets[i] * scale;
+      particle.zIndex = (this.mole.x + this.mole.y) * 100 + 30;
+      particle.visible = true;
+
+      // Fade based on position
+      particle.alpha = 1 - (this.moleDirtOffsets[i] / 35) * 0.8;
+    });
+  }
+
+  private checkMoleCollision(): void {
+    if (!this.mole.active) return;
+
+    // Only check collision when mole is surfaced (popupProgress > 0.5)
+    if (this.mole.burrowed || this.mole.popupProgress < 0.5) return;
+
+    // Check if player is on same tile as mole
+    if (this.player.x === this.mole.x && this.player.y === this.mole.y) {
+      // Player hit by mole! Reset to start
+      this.player.x = 0;
+      this.player.y = 0;
+      this.playerVisual.x = 0;
+      this.playerVisual.y = 0;
+      this.playerZCell.x = 0;
+      this.playerZCell.y = 0;
+
+      // Flash effect - make player blink briefly
+      this.playerGraphics.alpha = 0.2;
+      setTimeout(() => {
+        this.playerGraphics.alpha = 1;
+      }, 100);
+      setTimeout(() => {
+        this.playerGraphics.alpha = 0.2;
+      }, 200);
+      setTimeout(() => {
+        this.playerGraphics.alpha = 1;
+      }, 300);
+
+      // Mole burrows immediately and teleports
+      this.mole.burrowed = true;
+      this.mole.popupProgress = 0;
+      this.mole.burrowProgress = 0;
+      this.mole.lastPopupTime = Date.now();
+
+      // Teleport mole to a random valid position
+      let attempts = 0;
+      do {
+        this.mole.x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+        this.mole.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+        attempts++;
+      } while (
+        ((this.mole.x === 0 && this.mole.y === 0) ||
+         (this.mole.x === this.player.x && this.mole.y === this.player.y)) &&
+        attempts < 20
+      );
+
+      // Update dirt mound position
+      this.drawMoleDirtMound();
+      this.updatePlayerPosition();
     }
   }
 }
