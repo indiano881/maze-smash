@@ -35,6 +35,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private hammerGraphics!: Graphics;   // Hammer pickup sprite
   private hammerSparkles: Graphics[] = []; // Animated magic sparkles
   private sparkleOffsets: number[] = [];   // Y offsets for each sparkle
+  private cloakGraphics!: Graphics;    // Cloak pickup sprite
+  private cloakSparkles: Graphics[] = []; // Cloak magic sparkles
+  private cloakSparkleOffsets: number[] = []; // Y offsets for cloak sparkles
   private maze!: Maze;
   private player = { x: 0, y: 0, hasHammer: false };
   private playerVisual = { x: 0, y: 0 }; // Animated position
@@ -42,6 +45,8 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private playerDirection: 'up' | 'down' | 'left' | 'right' = 'down'; // Last movement direction
   private flag = { x: 0, y: 0, captured: false };
   private hammer = { x: 0, y: 0, pickedUp: false };
+  private cloak = { x: 0, y: 0, pickedUp: false };
+  private invisibility = { active: false, endTime: 0 };
   private exit = { x: 0, y: 0 };
   private readonly MOVE_SPEED = 0.15; // Lerp factor (0-1, higher = faster)
 
@@ -119,6 +124,20 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.sparkleOffsets.push(Math.random() * 40); // Random starting offset
       this.staticContainer.addChild(sparkle);
     }
+
+    // Cloak graphics - must be in staticContainer for z-sorting with walls
+    this.cloakGraphics = new Graphics();
+    this.staticContainer.addChild(this.cloakGraphics);
+
+    // Cloak sparkles (purple magic particles)
+    for (let i = 0; i < 5; i++) {
+      const sparkle = new Graphics();
+      sparkle.circle(0, 0, 2);
+      sparkle.fill({ color: 0xaa66ff, alpha: 0.8 });
+      this.cloakSparkles.push(sparkle);
+      this.cloakSparkleOffsets.push(Math.random() * 40);
+      this.staticContainer.addChild(sparkle);
+    }
   }
 
   private calculateSizes(): void {
@@ -194,6 +213,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Animate hammer sparkles (magic effect)
       this.animateHammerSparkles();
+
+      // Animate cloak sparkles
+      this.animateCloakSparkles();
+
+      // Check invisibility timer
+      this.updateInvisibility();
     });
   }
 
@@ -228,6 +253,60 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private animateCloakSparkles(): void {
+    if (this.cloak.pickedUp) {
+      // Hide all sparkles when cloak is picked up
+      this.cloakSparkles.forEach(s => s.visible = false);
+      return;
+    }
+
+    const { x, y } = this.toIso(this.cloak.x, this.cloak.y);
+    const scale = this.tileWidth / 80;
+    const xOffsets = [-10, -4, 2, 8, 14]; // Horizontal spread
+
+    this.cloakSparkles.forEach((sparkle, i) => {
+      // Move sparkle upward
+      this.cloakSparkleOffsets[i] += 0.4;
+
+      // Reset to bottom when reaching top
+      if (this.cloakSparkleOffsets[i] > 50) {
+        this.cloakSparkleOffsets[i] = 0;
+      }
+
+      // Position sparkle
+      sparkle.x = x + xOffsets[i] * scale;
+      sparkle.y = y - this.cloakSparkleOffsets[i] * scale;
+      sparkle.zIndex = (this.cloak.x + this.cloak.y) * 100 + 25;
+      sparkle.visible = true;
+
+      // Fade based on position (fade out at top)
+      sparkle.alpha = 1 - (this.cloakSparkleOffsets[i] / 50) * 0.7;
+    });
+  }
+
+  private updateInvisibility(): void {
+    if (this.invisibility.active && Date.now() >= this.invisibility.endTime) {
+      // Invisibility expired
+      this.invisibility.active = false;
+      this.initPlayerGraphics(); // Redraw player without invisibility
+    }
+
+    // Apply shimmer effect when invisible
+    if (this.invisibility.active) {
+      // Pulsing alpha effect
+      const timeLeft = this.invisibility.endTime - Date.now();
+      const pulse = 0.3 + Math.sin(Date.now() / 100) * 0.1;
+      // Flash more when about to expire (last 2 seconds)
+      if (timeLeft < 2000) {
+        this.playerGraphics.alpha = 0.3 + Math.sin(Date.now() / 50) * 0.3;
+      } else {
+        this.playerGraphics.alpha = pulse;
+      }
+    } else {
+      this.playerGraphics.alpha = 1;
+    }
+  }
+
   generateNewMaze(): void {
     this.maze = new Maze(this.MAZE_WIDTH, this.MAZE_HEIGHT);
     this.player = { x: 0, y: 0, hasHammer: false };
@@ -259,9 +338,31 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hammer.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
     }
 
+    // Initialize cloak position
+    this.cloak = {
+      x: Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1,
+      y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1,
+      pickedUp: false
+    };
+
+    // Ensure cloak isn't at flag, exit, start, or hammer
+    while ((this.cloak.x === this.flag.x && this.cloak.y === this.flag.y) ||
+           (this.cloak.x === this.exit.x && this.cloak.y === this.exit.y) ||
+           (this.cloak.x === this.hammer.x && this.cloak.y === this.hammer.y) ||
+           (this.cloak.x === 0 && this.cloak.y === 0)) {
+      this.cloak.x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+      this.cloak.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+    }
+
+    // Reset invisibility
+    this.invisibility = { active: false, endTime: 0 };
+
     // Reset sparkle positions
     for (let i = 0; i < this.sparkleOffsets.length; i++) {
       this.sparkleOffsets[i] = Math.random() * 40;
+    }
+    for (let i = 0; i < this.cloakSparkleOffsets.length; i++) {
+      this.cloakSparkleOffsets[i] = Math.random() * 40;
     }
 
     this.initPlayerGraphics();
@@ -269,6 +370,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.updatePlayerPosition();
     this.updateFlagVisibility();
     this.updateHammerVisibility();
+    this.updateCloakVisibility();
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -328,6 +430,15 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.player.hasHammer = true;
       this.updateHammerVisibility();
       this.initPlayerGraphics(); // Redraw player with hammer
+    }
+
+    // Check cloak pickup
+    if (!this.cloak.pickedUp && this.player.x === this.cloak.x && this.player.y === this.cloak.y) {
+      this.cloak.pickedUp = true;
+      this.invisibility.active = true;
+      this.invisibility.endTime = Date.now() + 10000; // 10 seconds
+      this.updateCloakVisibility();
+      this.initPlayerGraphics(); // Redraw player with invisibility effect
     }
 
     // Check flag pickup
@@ -421,7 +532,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.playerGraphics,
       this.flagGraphics,
       this.hammerGraphics,
-      ...this.hammerSparkles
+      this.cloakGraphics,
+      ...this.hammerSparkles,
+      ...this.cloakSparkles
     ]);
 
     while (this.staticContainer.children.length > 0) {
@@ -456,13 +569,18 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.staticContainer.addChild(this.playerGraphics);
     this.staticContainer.addChild(this.flagGraphics);
     this.staticContainer.addChild(this.hammerGraphics);
+    this.staticContainer.addChild(this.cloakGraphics);
     for (const sparkle of this.hammerSparkles) {
       this.staticContainer.addChild(sparkle);
     }
+    for (const sparkle of this.cloakSparkles) {
+      this.staticContainer.addChild(sparkle);
+    }
 
-    // Draw flag and hammer
+    // Draw flag, hammer, and cloak
     this.drawFlagGraphics();
     this.drawHammerGraphics();
+    this.drawCloakGraphics();
   }
 
   // Update player position (called every animation frame - no object recreation)
@@ -521,6 +639,11 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hammerGraphics.visible = !this.hammer.pickedUp;
   }
 
+  // Update cloak visibility
+  private updateCloakVisibility(): void {
+    this.cloakGraphics.visible = !this.cloak.pickedUp;
+  }
+
   // Draw hammer graphics (floating hammer pickup)
   private drawHammerGraphics(): void {
     const { x, y } = this.toIso(this.hammer.x, this.hammer.y);
@@ -548,6 +671,50 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hammerGraphics.y = y;
     this.hammerGraphics.zIndex = (this.hammer.x + this.hammer.y) * 100 + 20;
     this.hammerGraphics.visible = !this.hammer.pickedUp;
+  }
+
+  // Draw cloak graphics (floating invisibility cloak pickup)
+  private drawCloakGraphics(): void {
+    const { x, y } = this.toIso(this.cloak.x, this.cloak.y);
+    const scale = this.tileWidth / 80;
+
+    this.cloakGraphics.clear();
+
+    // Purple magical glow
+    this.cloakGraphics.circle(0, -15 * scale, 22 * scale);
+    this.cloakGraphics.fill({ color: 0x8844cc, alpha: 0.3 });
+
+    // Cloak body (flowing shape)
+    this.cloakGraphics.moveTo(0, -35 * scale);
+    this.cloakGraphics.quadraticCurveTo(-15 * scale, -30 * scale, -12 * scale, -10 * scale);
+    this.cloakGraphics.quadraticCurveTo(-10 * scale, 0, -8 * scale, 5 * scale);
+    this.cloakGraphics.quadraticCurveTo(0, 8 * scale, 8 * scale, 5 * scale);
+    this.cloakGraphics.quadraticCurveTo(10 * scale, 0, 12 * scale, -10 * scale);
+    this.cloakGraphics.quadraticCurveTo(15 * scale, -30 * scale, 0, -35 * scale);
+    this.cloakGraphics.fill({ color: 0x6633aa });
+
+    // Cloak inner (darker)
+    this.cloakGraphics.moveTo(0, -30 * scale);
+    this.cloakGraphics.quadraticCurveTo(-8 * scale, -25 * scale, -6 * scale, -10 * scale);
+    this.cloakGraphics.quadraticCurveTo(-4 * scale, 0, 0, 2 * scale);
+    this.cloakGraphics.quadraticCurveTo(4 * scale, 0, 6 * scale, -10 * scale);
+    this.cloakGraphics.quadraticCurveTo(8 * scale, -25 * scale, 0, -30 * scale);
+    this.cloakGraphics.fill({ color: 0x442288 });
+
+    // Hood
+    this.cloakGraphics.ellipse(0, -32 * scale, 8 * scale, 6 * scale);
+    this.cloakGraphics.fill({ color: 0x5522aa });
+
+    // Mysterious eye symbols
+    this.cloakGraphics.circle(-3 * scale, -18 * scale, 2 * scale);
+    this.cloakGraphics.fill({ color: 0xaa88ff, alpha: 0.6 });
+    this.cloakGraphics.circle(3 * scale, -18 * scale, 2 * scale);
+    this.cloakGraphics.fill({ color: 0xaa88ff, alpha: 0.6 });
+
+    this.cloakGraphics.x = x;
+    this.cloakGraphics.y = y;
+    this.cloakGraphics.zIndex = (this.cloak.x + this.cloak.y) * 100 + 20;
+    this.cloakGraphics.visible = !this.cloak.pickedUp;
   }
 
   // Create player graphics (only once)
