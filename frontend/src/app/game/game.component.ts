@@ -29,6 +29,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private app!: Application;
   private gameContainer!: Container;
+  private hudContainer!: Container;    // HUD overlay (fixed position)
+  private hudFace!: Graphics;          // Character face circle
+  private hudSlot1!: Graphics;         // Inventory slot 1 (hammer)
+  private hudSlot2!: Graphics;         // Inventory slot 2 (cloak/invisibility)
   private staticContainer!: Container; // Floor, walls, exit - only redraws on maze change
   private playerGraphics!: Graphics;   // Player sprite - just moves, no recreate
   private flagGraphics!: Graphics;     // Flag sprite
@@ -138,6 +142,26 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.cloakSparkleOffsets.push(Math.random() * 40);
       this.staticContainer.addChild(sparkle);
     }
+
+    // HUD container (fixed position, not affected by game camera)
+    this.hudContainer = new Container();
+    this.hudContainer.x = 20;
+    this.hudContainer.y = 20;
+    this.app.stage.addChild(this.hudContainer);
+
+    // Character face circle (placeholder)
+    this.hudFace = new Graphics();
+    this.hudContainer.addChild(this.hudFace);
+
+    // Inventory slot 1 (hammer)
+    this.hudSlot1 = new Graphics();
+    this.hudContainer.addChild(this.hudSlot1);
+
+    // Inventory slot 2 (cloak/invisibility)
+    this.hudSlot2 = new Graphics();
+    this.hudContainer.addChild(this.hudSlot2);
+
+    this.drawHUD();
   }
 
   private calculateSizes(): void {
@@ -289,6 +313,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Invisibility expired
       this.invisibility.active = false;
       this.initPlayerGraphics(); // Redraw player without invisibility
+      this.updateHUD();
+    }
+
+    // Update HUD timer display while invisible
+    if (this.invisibility.active) {
+      this.updateHUD();
     }
 
     // Apply shimmer effect when invisible
@@ -371,6 +401,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.updateFlagVisibility();
     this.updateHammerVisibility();
     this.updateCloakVisibility();
+    if (this.hudSlot1) this.updateHUD(); // Update HUD if initialized
   }
 
   @HostListener('window:keydown', ['$event'])
@@ -430,6 +461,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.player.hasHammer = true;
       this.updateHammerVisibility();
       this.initPlayerGraphics(); // Redraw player with hammer
+      this.updateHUD();
     }
 
     // Check cloak pickup
@@ -439,6 +471,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.invisibility.endTime = Date.now() + 10000; // 10 seconds
       this.updateCloakVisibility();
       this.initPlayerGraphics(); // Redraw player with invisibility effect
+      this.updateHUD();
     }
 
     // Check flag pickup
@@ -523,6 +556,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Redraw the maze to reflect the broken wall
     this.drawMaze();
     this.updatePlayerPosition();
+    this.updateHUD();
   }
 
   // Draw static maze elements (only called on maze change)
@@ -960,5 +994,90 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     exit.y = y;
     exit.zIndex = this.getDepth(gridX, gridY, 'sprite');
     this.staticContainer.addChild(exit);
+  }
+
+  private drawHUD(): void {
+    const faceRadius = 28;
+    const slotRadius = 16;
+    const spacing = 12;
+
+    // Character face circle (placeholder)
+    this.hudFace.clear();
+    // Outer ring
+    this.hudFace.circle(faceRadius, faceRadius, faceRadius);
+    this.hudFace.fill({ color: 0x2a2a2a });
+    this.hudFace.stroke({ color: 0x4a4a4a, width: 3 });
+    // Face background
+    this.hudFace.circle(faceRadius, faceRadius, faceRadius - 4);
+    this.hudFace.fill({ color: 0xe8c39e });
+    // Eyes
+    this.hudFace.circle(faceRadius - 8, faceRadius - 5, 4);
+    this.hudFace.fill({ color: 0x2a2a2a });
+    this.hudFace.circle(faceRadius + 8, faceRadius - 5, 4);
+    this.hudFace.fill({ color: 0x2a2a2a });
+    // Smile
+    this.hudFace.arc(faceRadius, faceRadius + 2, 10, 0.2, Math.PI - 0.2);
+    this.hudFace.stroke({ color: 0x2a2a2a, width: 2 });
+
+    // Inventory slot 1 (hammer)
+    this.hudSlot1.clear();
+    this.hudSlot1.x = faceRadius * 2 + spacing;
+    this.hudSlot1.y = faceRadius - slotRadius;
+    // Slot background
+    this.hudSlot1.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot1.fill({ color: 0x2a2a2a });
+    this.hudSlot1.stroke({ color: 0x4a4a4a, width: 2 });
+
+    // Inventory slot 2 (cloak)
+    this.hudSlot2.clear();
+    this.hudSlot2.x = faceRadius * 2 + spacing + slotRadius * 2 + spacing;
+    this.hudSlot2.y = faceRadius - slotRadius;
+    // Slot background
+    this.hudSlot2.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot2.fill({ color: 0x2a2a2a });
+    this.hudSlot2.stroke({ color: 0x4a4a4a, width: 2 });
+
+    this.updateHUD();
+  }
+
+  private updateHUD(): void {
+    const slotRadius = 16;
+
+    // Update slot 1 (hammer)
+    this.hudSlot1.clear();
+    this.hudSlot1.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot1.fill({ color: 0x2a2a2a });
+    this.hudSlot1.stroke({ color: this.player.hasHammer ? 0x88ccff : 0x4a4a4a, width: 2 });
+
+    if (this.player.hasHammer) {
+      // Draw mini hammer icon
+      this.hudSlot1.roundRect(slotRadius - 2, slotRadius - 8, 4, 14, 1);
+      this.hudSlot1.fill({ color: 0x8b4513 });
+      this.hudSlot1.roundRect(slotRadius - 6, slotRadius - 10, 12, 5, 2);
+      this.hudSlot1.fill({ color: 0x666666 });
+    }
+
+    // Update slot 2 (cloak/invisibility)
+    this.hudSlot2.clear();
+    this.hudSlot2.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot2.fill({ color: 0x2a2a2a });
+    this.hudSlot2.stroke({ color: this.invisibility.active ? 0xaa66ff : 0x4a4a4a, width: 2 });
+
+    if (this.invisibility.active) {
+      // Draw mini cloak icon with timer indication
+      const timeLeft = Math.max(0, this.invisibility.endTime - Date.now());
+      const progress = timeLeft / 10000; // 0 to 1
+
+      // Purple glow based on time remaining
+      this.hudSlot2.circle(slotRadius, slotRadius, slotRadius - 3);
+      this.hudSlot2.fill({ color: 0x6633aa, alpha: progress * 0.5 });
+
+      // Cloak shape
+      this.hudSlot2.moveTo(slotRadius, slotRadius - 8);
+      this.hudSlot2.quadraticCurveTo(slotRadius - 6, slotRadius - 4, slotRadius - 5, slotRadius + 6);
+      this.hudSlot2.quadraticCurveTo(slotRadius, slotRadius + 8, slotRadius + 5, slotRadius + 6);
+      this.hudSlot2.quadraticCurveTo(slotRadius + 6, slotRadius - 4, slotRadius, slotRadius - 8);
+      this.hudSlot2.fill({ color: 0x8844cc });
+    }
   }
 }
