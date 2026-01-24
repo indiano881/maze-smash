@@ -34,6 +34,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private hudSlot1!: Graphics;         // Inventory slot 1 (hammer)
   private hudSlot2!: Graphics;         // Inventory slot 2 (cloak/invisibility)
   private hudSlot3!: Graphics;         // Inventory slot 3 (big torch)
+  private hudSlot4!: Graphics;         // Inventory slot 4 (ice shard)
   private staticContainer!: Container; // Floor, walls, exit - only redraws on maze change
   private fogContainer!: Container;    // Fog of war overlay
   private playerGraphics!: Graphics;   // Player sprite - just moves, no recreate
@@ -47,8 +48,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private bigTorchGraphics!: Graphics; // Big torch pickup sprite
   private bigTorchSparkles: Graphics[] = []; // Big torch magic sparkles
   private bigTorchSparkleOffsets: number[] = []; // Y offsets for big torch sparkles
+  private iceShardGraphics!: Graphics; // Ice shard pickup sprite
+  private iceShardSparkles: Graphics[] = []; // Ice shard magic sparkles
+  private iceShardSparkleOffsets: number[] = []; // Y offsets for ice shard sparkles
+  private iceProjectileGraphics!: Graphics; // Ice projectile when shot
   private maze!: Maze;
-  private player = { x: 0, y: 0, hasHammer: false };
+  private player = { x: 0, y: 0, hasHammer: false, hasIce: false };
   private playerVisual = { x: 0, y: 0 }; // Animated position
   private playerZCell = { x: 0, y: 0 };  // Cell used for z-index (updates only when movement completes)
   private playerDirection: 'up' | 'down' | 'left' | 'right' = 'down'; // Last movement direction
@@ -58,6 +63,13 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   private invisibility = { active: false, endTime: 0 };
   private bigTorch = { x: 0, y: 0, pickedUp: false };
   private torchPower = { active: false, endTime: 0 };
+  private iceShard = { x: 0, y: 0, pickedUp: false };
+  private iceProjectile = {
+    active: false,
+    x: 0, y: 0,
+    visualX: 0, visualY: 0,
+    direction: 'down' as 'up' | 'down' | 'left' | 'right'
+  };
   private exit = { x: 0, y: 0 };
 
   // Fog of war settings
@@ -168,6 +180,25 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.staticContainer.addChild(sparkle);
     }
 
+    // Ice shard graphics - must be in staticContainer for z-sorting with walls
+    this.iceShardGraphics = new Graphics();
+    this.staticContainer.addChild(this.iceShardGraphics);
+
+    // Ice shard sparkles (cyan/white magic particles)
+    for (let i = 0; i < 5; i++) {
+      const sparkle = new Graphics();
+      sparkle.circle(0, 0, 2);
+      sparkle.fill({ color: 0x88ddff, alpha: 0.9 });
+      this.iceShardSparkles.push(sparkle);
+      this.iceShardSparkleOffsets.push(Math.random() * 40);
+      this.staticContainer.addChild(sparkle);
+    }
+
+    // Ice projectile graphics
+    this.iceProjectileGraphics = new Graphics();
+    this.iceProjectileGraphics.visible = false;
+    this.staticContainer.addChild(this.iceProjectileGraphics);
+
     // Fog of war container (drawn on top of everything except HUD)
     this.fogContainer = new Container();
     this.fogContainer.sortableChildren = true;
@@ -194,6 +225,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Inventory slot 3 (big torch)
     this.hudSlot3 = new Graphics();
     this.hudContainer.addChild(this.hudSlot3);
+
+    // Inventory slot 4 (ice shard)
+    this.hudSlot4 = new Graphics();
+    this.hudContainer.addChild(this.hudSlot4);
 
     this.drawHUD();
   }
@@ -277,6 +312,12 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
       // Animate big torch sparkles
       this.animateBigTorchSparkles();
+
+      // Animate ice shard sparkles
+      this.animateIceShardSparkles();
+
+      // Update ice projectile
+      this.updateIceProjectile();
 
       // Check invisibility timer
       this.updateInvisibility();
@@ -382,6 +423,160 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     });
   }
 
+  private animateIceShardSparkles(): void {
+    if (this.iceShard.pickedUp) {
+      // Hide all sparkles when ice shard is picked up
+      this.iceShardSparkles.forEach(s => s.visible = false);
+      return;
+    }
+
+    const { x, y } = this.toIso(this.iceShard.x, this.iceShard.y);
+    const scale = this.tileWidth / 80;
+    const xOffsets = [-10, -4, 2, 8, 12]; // Horizontal spread
+
+    this.iceShardSparkles.forEach((sparkle, i) => {
+      // Move sparkle upward
+      this.iceShardSparkleOffsets[i] += 0.5;
+
+      // Reset to bottom when reaching top
+      if (this.iceShardSparkleOffsets[i] > 45) {
+        this.iceShardSparkleOffsets[i] = 0;
+      }
+
+      // Position sparkle
+      sparkle.x = x + xOffsets[i] * scale;
+      sparkle.y = y - this.iceShardSparkleOffsets[i] * scale - 10 * scale;
+      sparkle.zIndex = (this.iceShard.x + this.iceShard.y) * 100 + 25;
+      sparkle.visible = true;
+
+      // Fade based on position (fade out at top)
+      sparkle.alpha = 1 - (this.iceShardSparkleOffsets[i] / 45) * 0.7;
+    });
+  }
+
+  private updateIceProjectile(): void {
+    if (!this.iceProjectile.active) {
+      this.iceProjectileGraphics.visible = false;
+      return;
+    }
+
+    const speed = 0.15; // Constant speed per frame (tiles per frame)
+
+    // Move projectile at constant speed in its direction
+    switch (this.iceProjectile.direction) {
+      case 'up':
+        this.iceProjectile.visualY -= speed;
+        break;
+      case 'down':
+        this.iceProjectile.visualY += speed;
+        break;
+      case 'left':
+        this.iceProjectile.visualX -= speed;
+        break;
+      case 'right':
+        this.iceProjectile.visualX += speed;
+        break;
+    }
+
+    // Check if projectile has reached or passed the target cell
+    const reachedTarget =
+      (this.iceProjectile.direction === 'up' && this.iceProjectile.visualY <= this.iceProjectile.y) ||
+      (this.iceProjectile.direction === 'down' && this.iceProjectile.visualY >= this.iceProjectile.y) ||
+      (this.iceProjectile.direction === 'left' && this.iceProjectile.visualX <= this.iceProjectile.x) ||
+      (this.iceProjectile.direction === 'right' && this.iceProjectile.visualX >= this.iceProjectile.x);
+
+    if (reachedTarget) {
+      // Snap to target cell
+      this.iceProjectile.visualX = this.iceProjectile.x;
+      this.iceProjectile.visualY = this.iceProjectile.y;
+
+      // Calculate next cell based on direction
+      let nextX = this.iceProjectile.x;
+      let nextY = this.iceProjectile.y;
+      switch (this.iceProjectile.direction) {
+        case 'up': nextY--; break;
+        case 'down': nextY++; break;
+        case 'left': nextX--; break;
+        case 'right': nextX++; break;
+      }
+
+      // Check bounds first
+      if (nextX < 0 || nextX >= this.MAZE_WIDTH || nextY < 0 || nextY >= this.MAZE_HEIGHT) {
+        this.iceProjectile.active = false;
+        this.iceProjectileGraphics.visible = false;
+        return;
+      }
+
+      // Check if projectile can continue (no wall blocking)
+      if (this.maze.canMove(this.iceProjectile.x, this.iceProjectile.y, nextX, nextY)) {
+        this.iceProjectile.x = nextX;
+        this.iceProjectile.y = nextY;
+      } else {
+        // Hit a wall - projectile stops
+        this.iceProjectile.active = false;
+        this.iceProjectileGraphics.visible = false;
+        return;
+      }
+    }
+
+    // Update projectile visual position
+    const { x, y } = this.toIso(this.iceProjectile.visualX, this.iceProjectile.visualY);
+    this.iceProjectileGraphics.x = x;
+    this.iceProjectileGraphics.y = y;
+    this.iceProjectileGraphics.zIndex = (Math.round(this.iceProjectile.visualX) + Math.round(this.iceProjectile.visualY)) * 100 + 50;
+    this.iceProjectileGraphics.visible = true;
+  }
+
+  private shootIce(): void {
+    if (!this.player.hasIce || this.iceProjectile.active) return;
+
+    // Use the ice
+    this.player.hasIce = false;
+
+    // Initialize projectile at player position
+    this.iceProjectile.active = true;
+    this.iceProjectile.x = this.player.x;
+    this.iceProjectile.y = this.player.y;
+    this.iceProjectile.visualX = this.player.x;
+    this.iceProjectile.visualY = this.player.y;
+    this.iceProjectile.direction = this.playerDirection;
+
+    // Draw the projectile
+    this.drawIceProjectile();
+    this.updateHUD();
+  }
+
+  private drawIceProjectile(): void {
+    const scale = this.tileWidth / 80;
+
+    this.iceProjectileGraphics.clear();
+
+    // Glow
+    this.iceProjectileGraphics.circle(0, -10 * scale, 15 * scale);
+    this.iceProjectileGraphics.fill({ color: 0x88ddff, alpha: 0.4 });
+
+    // Ice crystal shape (pointed shard)
+    this.iceProjectileGraphics.moveTo(0, -25 * scale);
+    this.iceProjectileGraphics.lineTo(-8 * scale, -5 * scale);
+    this.iceProjectileGraphics.lineTo(-4 * scale, 5 * scale);
+    this.iceProjectileGraphics.lineTo(4 * scale, 5 * scale);
+    this.iceProjectileGraphics.lineTo(8 * scale, -5 * scale);
+    this.iceProjectileGraphics.closePath();
+    this.iceProjectileGraphics.fill({ color: 0x66ccff });
+
+    // Inner highlight
+    this.iceProjectileGraphics.moveTo(0, -20 * scale);
+    this.iceProjectileGraphics.lineTo(-4 * scale, -5 * scale);
+    this.iceProjectileGraphics.lineTo(0, 0);
+    this.iceProjectileGraphics.lineTo(4 * scale, -5 * scale);
+    this.iceProjectileGraphics.closePath();
+    this.iceProjectileGraphics.fill({ color: 0xaaeeff });
+
+    // Bright center
+    this.iceProjectileGraphics.circle(0, -10 * scale, 3 * scale);
+    this.iceProjectileGraphics.fill({ color: 0xffffff, alpha: 0.8 });
+  }
+
   private updateInvisibility(): void {
     if (this.invisibility.active && Date.now() >= this.invisibility.endTime) {
       // Invisibility expired
@@ -476,7 +671,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   generateNewMaze(): void {
     this.maze = new Maze(this.MAZE_WIDTH, this.MAZE_HEIGHT);
-    this.player = { x: 0, y: 0, hasHammer: false };
+    this.player = { x: 0, y: 0, hasHammer: false, hasIce: false };
     this.playerVisual = { x: 0, y: 0 };
     this.playerZCell = { x: 0, y: 0 };
     this.playerDirection = 'down';
@@ -538,9 +733,28 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.bigTorch.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
     }
 
-    // Reset invisibility and torch power
+    // Initialize ice shard position
+    this.iceShard = {
+      x: Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1,
+      y: Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1,
+      pickedUp: false
+    };
+
+    // Ensure ice shard isn't at other pickups
+    while ((this.iceShard.x === this.flag.x && this.iceShard.y === this.flag.y) ||
+           (this.iceShard.x === this.exit.x && this.iceShard.y === this.exit.y) ||
+           (this.iceShard.x === this.hammer.x && this.iceShard.y === this.hammer.y) ||
+           (this.iceShard.x === this.cloak.x && this.iceShard.y === this.cloak.y) ||
+           (this.iceShard.x === this.bigTorch.x && this.iceShard.y === this.bigTorch.y) ||
+           (this.iceShard.x === 0 && this.iceShard.y === 0)) {
+      this.iceShard.x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+      this.iceShard.y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+    }
+
+    // Reset invisibility, torch power, and ice projectile
     this.invisibility = { active: false, endTime: 0 };
     this.torchPower = { active: false, endTime: 0 };
+    this.iceProjectile = { active: false, x: 0, y: 0, visualX: 0, visualY: 0, direction: 'down' };
 
     // Reset sparkle positions
     for (let i = 0; i < this.sparkleOffsets.length; i++) {
@@ -552,6 +766,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     for (let i = 0; i < this.bigTorchSparkleOffsets.length; i++) {
       this.bigTorchSparkleOffsets[i] = Math.random() * 40;
     }
+    for (let i = 0; i < this.iceShardSparkleOffsets.length; i++) {
+      this.iceShardSparkleOffsets[i] = Math.random() * 40;
+    }
 
     this.initPlayerGraphics();
     this.drawMaze();
@@ -560,6 +777,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.updateHammerVisibility();
     this.updateCloakVisibility();
     this.updateBigTorchVisibility();
+    this.updateIceShardVisibility();
     if (this.hudSlot1) this.updateHUD(); // Update HUD if initialized
   }
 
@@ -595,6 +813,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       case 'e':
         event.preventDefault();
         this.trySmashWall();
+        return;
+      case 'q':
+        event.preventDefault();
+        this.shootIce();
         return;
       default:
         return;
@@ -640,6 +862,14 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.torchPower.active = true;
       this.torchPower.endTime = Date.now() + 10000; // 10 seconds expanded vision
       this.updateBigTorchVisibility();
+      this.updateHUD();
+    }
+
+    // Check ice shard pickup
+    if (!this.iceShard.pickedUp && this.player.x === this.iceShard.x && this.player.y === this.iceShard.y) {
+      this.iceShard.pickedUp = true;
+      this.player.hasIce = true;
+      this.updateIceShardVisibility();
       this.updateHUD();
     }
 
@@ -739,7 +969,10 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.bigTorchGraphics,
       ...this.hammerSparkles,
       ...this.cloakSparkles,
-      ...this.bigTorchSparkles
+      ...this.bigTorchSparkles,
+      this.iceShardGraphics,
+      ...this.iceShardSparkles,
+      this.iceProjectileGraphics
     ]);
 
     while (this.staticContainer.children.length > 0) {
@@ -785,12 +1018,18 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     for (const sparkle of this.bigTorchSparkles) {
       this.staticContainer.addChild(sparkle);
     }
+    this.staticContainer.addChild(this.iceShardGraphics);
+    for (const sparkle of this.iceShardSparkles) {
+      this.staticContainer.addChild(sparkle);
+    }
+    this.staticContainer.addChild(this.iceProjectileGraphics);
 
-    // Draw flag, hammer, cloak, and big torch
+    // Draw flag, hammer, cloak, big torch, and ice shard
     this.drawFlagGraphics();
     this.drawHammerGraphics();
     this.drawCloakGraphics();
     this.drawBigTorchGraphics();
+    this.drawIceShardGraphics();
   }
 
   // Update player position (called every animation frame - no object recreation)
@@ -973,6 +1212,57 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.bigTorchGraphics.y = y;
     this.bigTorchGraphics.zIndex = (this.bigTorch.x + this.bigTorch.y) * 100 + 20;
     this.bigTorchGraphics.visible = !this.bigTorch.pickedUp;
+  }
+
+  // Update ice shard visibility
+  private updateIceShardVisibility(): void {
+    this.iceShardGraphics.visible = !this.iceShard.pickedUp;
+  }
+
+  // Draw ice shard graphics (floating ice crystal pickup)
+  private drawIceShardGraphics(): void {
+    const { x, y } = this.toIso(this.iceShard.x, this.iceShard.y);
+    const scale = this.tileWidth / 80;
+
+    this.iceShardGraphics.clear();
+
+    // Cyan/blue magical glow
+    this.iceShardGraphics.circle(0, -20 * scale, 25 * scale);
+    this.iceShardGraphics.fill({ color: 0x44aaff, alpha: 0.3 });
+
+    // Main ice crystal (pointed shard shape)
+    this.iceShardGraphics.moveTo(0, -45 * scale);
+    this.iceShardGraphics.lineTo(-10 * scale, -20 * scale);
+    this.iceShardGraphics.lineTo(-6 * scale, 0);
+    this.iceShardGraphics.lineTo(6 * scale, 0);
+    this.iceShardGraphics.lineTo(10 * scale, -20 * scale);
+    this.iceShardGraphics.closePath();
+    this.iceShardGraphics.fill({ color: 0x66ccff });
+
+    // Inner crystal facet (lighter)
+    this.iceShardGraphics.moveTo(0, -40 * scale);
+    this.iceShardGraphics.lineTo(-5 * scale, -20 * scale);
+    this.iceShardGraphics.lineTo(0, -5 * scale);
+    this.iceShardGraphics.lineTo(5 * scale, -20 * scale);
+    this.iceShardGraphics.closePath();
+    this.iceShardGraphics.fill({ color: 0x99ddff });
+
+    // Highlight streak
+    this.iceShardGraphics.moveTo(-2 * scale, -35 * scale);
+    this.iceShardGraphics.lineTo(-1 * scale, -15 * scale);
+    this.iceShardGraphics.lineTo(1 * scale, -15 * scale);
+    this.iceShardGraphics.lineTo(2 * scale, -35 * scale);
+    this.iceShardGraphics.closePath();
+    this.iceShardGraphics.fill({ color: 0xffffff, alpha: 0.6 });
+
+    // Bright tip
+    this.iceShardGraphics.circle(0, -42 * scale, 3 * scale);
+    this.iceShardGraphics.fill({ color: 0xffffff, alpha: 0.8 });
+
+    this.iceShardGraphics.x = x;
+    this.iceShardGraphics.y = y;
+    this.iceShardGraphics.zIndex = (this.iceShard.x + this.iceShard.y) * 100 + 20;
+    this.iceShardGraphics.visible = !this.iceShard.pickedUp;
   }
 
   // Create player graphics with directional face
@@ -1341,6 +1631,15 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.hudSlot3.fill({ color: 0x2a2a2a });
     this.hudSlot3.stroke({ color: 0x4a4a4a, width: 2 });
 
+    // Inventory slot 4 (ice shard)
+    this.hudSlot4.clear();
+    this.hudSlot4.x = faceRadius * 2 + spacing + (slotRadius * 2 + spacing) * 3;
+    this.hudSlot4.y = faceRadius - slotRadius;
+    // Slot background
+    this.hudSlot4.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot4.fill({ color: 0x2a2a2a });
+    this.hudSlot4.stroke({ color: 0x4a4a4a, width: 2 });
+
     this.updateHUD();
   }
 
@@ -1408,6 +1707,27 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.hudSlot3.fill({ color: 0xff6600 });
       this.hudSlot3.ellipse(slotRadius, slotRadius - 9, 3, 5);
       this.hudSlot3.fill({ color: 0xffaa00 });
+    }
+
+    // Update slot 4 (ice shard)
+    this.hudSlot4.clear();
+    this.hudSlot4.circle(slotRadius, slotRadius, slotRadius);
+    this.hudSlot4.fill({ color: 0x2a2a2a });
+    this.hudSlot4.stroke({ color: this.player.hasIce ? 0x66ccff : 0x4a4a4a, width: 2 });
+
+    if (this.player.hasIce) {
+      // Draw mini ice shard icon
+      this.hudSlot4.moveTo(slotRadius, slotRadius - 10);
+      this.hudSlot4.lineTo(slotRadius - 5, slotRadius);
+      this.hudSlot4.lineTo(slotRadius - 3, slotRadius + 6);
+      this.hudSlot4.lineTo(slotRadius + 3, slotRadius + 6);
+      this.hudSlot4.lineTo(slotRadius + 5, slotRadius);
+      this.hudSlot4.closePath();
+      this.hudSlot4.fill({ color: 0x66ccff });
+
+      // Highlight
+      this.hudSlot4.circle(slotRadius, slotRadius - 6, 2);
+      this.hudSlot4.fill({ color: 0xffffff, alpha: 0.8 });
     }
   }
 }
