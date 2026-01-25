@@ -6,14 +6,16 @@ import {
   ViewChild,
   AfterViewInit,
   HostListener,
+  inject,
 } from '@angular/core';
 import { Application, Container, Graphics, Sprite, Assets } from 'pixi.js';
 import { Maze } from './maze';
 import { GameContext } from './game-context';
-import { Player, Direction, Flag, Mole } from './entities';
+import { Player, Direction, Flag, Mole, Opponent } from './entities';
 import { HammerPickup, CloakPickup, BigTorchPickup, IceShardPickup } from './entities/pickups';
 import { FogSystem, HUDSystem } from './systems';
 import { MazeRenderer } from './rendering';
+import { WebSocketService, MazeData } from './services';
 
 @Component({
   selector: 'app-game',
@@ -34,6 +36,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   @ViewChild('gameContainer', { static: true })
   containerRef!: ElementRef<HTMLDivElement>;
 
+  // Inject WebSocket service
+  private wsService = inject(WebSocketService);
+
   private app!: Application;
   private gameContainer!: Container;
   private backgroundSprite!: Sprite;
@@ -49,12 +54,16 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   // Entities
   private player!: Player;
+  private opponent!: Opponent;
   private flag!: Flag;
   private mole!: Mole;
   private hammer!: HammerPickup;
   private cloak!: CloakPickup;
   private bigTorch!: BigTorchPickup;
   private iceShard!: IceShardPickup;
+
+  // Multiplayer state
+  private multiplayerEnabled = true; // Set to false to play offline
 
   // Game state
   private maze!: Maze;
@@ -92,11 +101,113 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.generateNewMaze();
     this.startAnimationLoop();
     this.initialized = true;
+
+    // Connect to WebSocket server (after entities are created)
+    if (this.multiplayerEnabled) {
+      this.initMultiplayer();
+    }
+  }
+
+  private initMultiplayer(): void {
+    this.wsService.connect();
+
+    // Wait for ID to be assigned, then join room
+    this.wsService.myId$.subscribe((id) => {
+      if (id) {
+        console.log('Got my ID:', id);
+        this.wsService.joinRoom('game-room');
+      }
+    });
+
+    // Handle maze data from server
+    this.wsService.maze$.subscribe((mazeData) => {
+      console.log('Received maze from server');
+      this.loadServerMaze(mazeData);
+    });
+
+    // Update opponent when we receive player data
+    this.wsService.players$.subscribe((players) => {
+      const myId = this.wsService.playerId;
+      console.log('Received players:', players, 'My ID:', myId);
+
+      const otherPlayer = players.find((p) => p.id !== myId);
+
+      if (otherPlayer) {
+        console.log('Updating opponent at:', otherPlayer.x, otherPlayer.y);
+        this.opponent.update(otherPlayer.id, otherPlayer.x, otherPlayer.y);
+        this.opponent.draw();
+      } else {
+        this.opponent.hide();
+      }
+    });
+  }
+
+  private loadServerMaze(mazeData: MazeData): void {
+    // Create maze from server data
+    this.maze = Maze.fromServer(mazeData);
+    this.updateContext();
+    this.exit = { x: this.MAZE_WIDTH - 1, y: this.MAZE_HEIGHT - 1 };
+
+    // Reset player to start
+    this.player.reset();
+
+    // Place flag (for now, same logic - later server should control this too)
+    let flagX = Math.floor(Math.random() * (this.MAZE_WIDTH - 1)) + 1;
+    let flagY = Math.floor(Math.random() * (this.MAZE_HEIGHT - 1)) + 1;
+    if (flagX === this.exit.x && flagY === this.exit.y) {
+      flagX = Math.max(0, this.exit.x - 1);
+    }
+    this.flag.reset(flagX, flagY);
+
+    // Place pickups
+    const occupied = new Set<string>([
+      `0,0`,
+      `${this.exit.x},${this.exit.y}`,
+      `${flagX},${flagY}`,
+    ]);
+
+    const placePickup = (
+      pickup: { reset: (x: number, y: number) => void },
+      occupied: Set<string>
+    ) => {
+      let x: number, y: number;
+      do {
+        x = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+        y = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+      } while (occupied.has(`${x},${y}`));
+      occupied.add(`${x},${y}`);
+      pickup.reset(x, y);
+    };
+
+    placePickup(this.hammer, occupied);
+    placePickup(this.cloak, occupied);
+    placePickup(this.bigTorch, occupied);
+    placePickup(this.iceShard, occupied);
+
+    // Place mole
+    let moleX: number, moleY: number;
+    do {
+      moleX = Math.floor(Math.random() * (this.MAZE_WIDTH - 2)) + 1;
+      moleY = Math.floor(Math.random() * (this.MAZE_HEIGHT - 2)) + 1;
+    } while (occupied.has(`${moleX},${moleY}`));
+    this.mole.reset(moleX, moleY);
+
+    // Reset power-ups
+    this.invisibility = { active: false, endTime: 0 };
+    this.torchPower = { active: false, endTime: 0 };
+
+    // Draw everything
+    this.drawMaze();
+    this.updateHUD();
+
+    // Send initial position to server
+    this.wsService.sendMove(this.player.x, this.player.y);
   }
 
   ngOnDestroy(): void {
     window.removeEventListener('newMaze', this.boundNewMazeHandler);
     window.removeEventListener('resize', this.boundResizeHandler);
+    this.wsService.disconnect();
     this.app?.destroy(true);
   }
 
@@ -160,6 +271,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
   private initEntities(): void {
     this.player = new Player(this.context);
+    this.opponent = new Opponent(this.context);
     this.flag = new Flag(this.context);
     this.mole = new Mole(this.context);
     this.hammer = new HammerPickup(this.context);
@@ -237,6 +349,9 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       // Update player animation
       this.player.updateAnimation(this.MOVE_SPEED);
 
+      // Update opponent animation
+      this.opponent.updateAnimation(this.MOVE_SPEED);
+
       // Animate pickups
       this.hammer.animateSparkles();
       this.cloak.animateSparkles();
@@ -294,6 +409,13 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
   }
 
   generateNewMaze(): void {
+    // In multiplayer mode, maze comes from server
+    // This is only for offline/single player mode
+    if (this.multiplayerEnabled) {
+      console.log('Multiplayer enabled - waiting for server maze');
+      return;
+    }
+
     this.maze = new Maze(this.MAZE_WIDTH, this.MAZE_HEIGHT);
     this.updateContext();
     this.exit = { x: this.MAZE_WIDTH - 1, y: this.MAZE_HEIGHT - 1 };
@@ -355,6 +477,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     // Clear static container but preserve entity graphics
     const persistentGraphics = new Set<Graphics>([
       this.player.getGraphics(),
+      this.opponent.getGraphics(),
       this.flag.getGraphics(),
       this.hammer.getGraphics(),
       ...this.hammer.getSparkles(),
@@ -383,6 +506,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
 
     // Re-add entity graphics
     this.staticContainer.addChild(this.player.getGraphics());
+    this.staticContainer.addChild(this.opponent.getGraphics());
     this.staticContainer.addChild(this.flag.getGraphics());
     this.staticContainer.addChild(this.hammer.getGraphics());
     this.hammer.getSparkles().forEach((s) => this.staticContainer.addChild(s));
@@ -405,6 +529,7 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
     this.iceShard.draw();
     this.mole.drawDirtMound();
     this.mole.draw();
+    this.opponent.draw();
   }
 
   private updateHUD(): void {
@@ -470,6 +595,11 @@ export class GameComponent implements OnInit, AfterViewInit, OnDestroy {
       this.player.x = newX;
       this.player.y = newY;
       this.checkPickups();
+
+      // Send position to server
+      if (this.multiplayerEnabled) {
+        this.wsService.sendMove(this.player.x, this.player.y);
+      }
     }
   }
 

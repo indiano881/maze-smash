@@ -1,3 +1,5 @@
+import { MazeData } from './services';
+
 export interface Cell {
   x: number;
   y: number;
@@ -15,10 +17,47 @@ export class Maze {
   width: number;
   height: number;
 
-  constructor(width: number, height: number) {
+  constructor(width: number, height: number, serverData?: MazeData) {
     this.width = width;
     this.height = height;
-    this.generate();
+
+    if (serverData) {
+      this.loadFromServer(serverData);
+    } else {
+      this.generate();
+    }
+  }
+
+  /**
+   * Load maze from server data
+   */
+  private loadFromServer(data: MazeData): void {
+    this.cells = [];
+    for (let y = 0; y < data.height; y++) {
+      const row: Cell[] = [];
+      for (let x = 0; x < data.width; x++) {
+        const serverCell = data.cells[y][x];
+        row.push({
+          x: serverCell.x,
+          y: serverCell.y,
+          walls: {
+            top: serverCell.top,
+            right: serverCell.right,
+            bottom: serverCell.bottom,
+            left: serverCell.left,
+          },
+          visited: true, // Server maze is already generated
+        });
+      }
+      this.cells.push(row);
+    }
+  }
+
+  /**
+   * Create maze from server data (static factory)
+   */
+  static fromServer(data: MazeData): Maze {
+    return new Maze(data.width, data.height, data);
   }
 
   private generate(): void {

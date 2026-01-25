@@ -18,7 +18,7 @@ This is a learning project for: Angular, Go, Terraform, and GCP.
 
 | Layer | Technology |
 |-------|------------|
-| Frontend | Angular 18+ with PixiJS |
+| Frontend | Angular 18+ with PixiJS 8 |
 | Backend API | Go + Gin framework |
 | Real-time | Go + gorilla/websocket |
 | Database | Firestore |
@@ -48,19 +48,41 @@ cd infrastructure && terraform apply
 
 ## Frontend Architecture
 
-### Key Files
-- `frontend/src/app/game/game.component.ts` - Main game component with PixiJS rendering
-- `frontend/src/app/game/maze.ts` - Maze generation using recursive backtracking
+### Module Structure
+The game uses a modular architecture with dependency injection via `GameContext`:
+
+```
+frontend/src/app/game/
+├── game.component.ts      # Main component - orchestrates game loop
+├── game-context.ts        # Shared context (Container, toIso, dimensions)
+├── maze.ts                # Maze generation (recursive backtracking)
+├── entities/              # Game objects (Player, Flag, Mole, pickups)
+├── systems/               # FogSystem, HUDSystem
+└── rendering/             # MazeRenderer
+```
+
+### GameContext Pattern
+All modules receive a `GameContext` object containing:
+- `staticContainer` - PixiJS Container for all game graphics
+- `toIso(x, y)` - Converts grid coords to isometric screen position
+- `getDepth(x, y, layer)` - Z-index calculation for depth sorting
+- Tile dimensions and maze data
 
 ### Rendering
 - Uses PixiJS 8 for isometric 2.5D rendering
-- Grid-to-screen conversion via `toIso(x, y)` method
-- Depth sorting with `zIndex` for proper layering (floor → walls → sprites)
+- Grid-to-screen conversion: `x_screen = (x - y) * (tileWidth / 2)`
+- Depth layers: floor (0) → backWall (10) → sprite (50) → frontWall (90)
+- Garden theme colors defined in `GARDEN` constant (`game-context.ts`)
+
+### Adding New Entities
+1. Create class in `entities/` accepting `GameContext`
+2. Implement `draw()`, `reset(x, y)`, `getGraphics()` methods
+3. Add to `game.component.ts`: instantiate in `initEntities()`, draw in `drawMaze()`
 
 ### Maze System
 - `Maze` class generates mazes using recursive backtracking algorithm
-- `Cell` interface tracks walls on all four sides
-- `canMove()` validates movement against wall state
+- `Cell` interface tracks walls on all four sides (top, right, bottom, left)
+- `canMove(fromX, fromY, toX, toY)` validates movement against wall state
 
 ## Planned Architecture
 
@@ -96,10 +118,20 @@ POST /api/rooms/:id/join  # Join a room
 
 ## Game Mechanics
 
-- **Fog of war**: Player sees ~3 tiles around them (not yet implemented)
-- **Random maze generation** each match
-- **Win conditions**: Capture flag + escape through exit, or kill opponent
+- **Fog of war**: Player visibility of 5 tiles (10 with Big Torch power-up)
+- **Random maze generation** each match (10x10 grid)
+- **Win condition**: Capture flag + escape through exit at bottom-right
 - **Movement**: WASD or arrow keys
+- **Controls**: E to smash wall (with Hammer), Q to shoot ice (with Ice Shard)
+
+### Power-ups
+- **Hammer** - Smash one wall in facing direction
+- **Cloak** - 10 seconds of invisibility
+- **Big Torch** - 10 seconds of extended visibility
+- **Ice Shard** - Shootable projectile
+
+### Enemies
+- **Mole** - Burrows underground, surfaces to damage player (resets to start)
 
 ## Current Status
 

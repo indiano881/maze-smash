@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Multiplayer Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #0f0; }
+        button { margin: 5px; padding: 10px 20px; cursor: pointer; }
+        #log { background: #000; padding: 10px; height: 200px; overflow-y: auto; margin-top: 20px; }
+        #players { background: #111; padding: 10px; margin-top: 10px; min-height: 50px; }
+        .error { color: #f00; }
+        .sent { color: #0ff; }
+        .info { color: #ff0; }
+        h3 { margin: 10px 0 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>WebSocket Multiplayer Test</h1>
+    <p>Open this page in two browser windows to test multiplayer!</p>
+
+    <div>
+        <button onclick="connect()">Connect</button>
+        <button onclick="join()">Join Room</button>
+        <button onclick="disconnect()">Disconnect</button>
+    </div>
+
+    <div>
+        <h3>Move:</h3>
+        <button onclick="move(-1, 0)">Left</button>
+        <button onclick="move(1, 0)">Right</button>
+        <button onclick="move(0, -1)">Up</button>
+        <button onclick="move(0, 1)">Down</button>
+    </div>
+
+    <h3>Players in room:</h3>
+    <div id="players">Not connected</div>
+
+    <h3>Log:</h3>
+    <div id="log"></div>
+
+    <script>
+        let ws = null;
+        let myId = null;
+        let myX = 0;
+        let myY = 0;
+
+        function log(message, className = '') {
+            const div = document.getElementById('log');
+            const line = document.createElement('div');
+            line.className = className;
+            line.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            div.appendChild(line);
+            div.scrollTop = div.scrollHeight;
+        }
+
+        function updatePlayers(players) {
+            const div = document.getElementById('players');
+            if (!players || players.length === 0) {
+                div.textContent = 'No players in room';
+                return;
+            }
+            div.innerHTML = players.map(p => {
+                const isMe = p.id === myId;
+                return `<div style="color: ${isMe ? '#0ff' : '#0f0'}">
+                    ${isMe ? '(You) ' : ''}${p.id}: position (${p.x}, ${p.y})
+                </div>`;
+            }).join('');
+        }
+
+        function connect() {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                log('Already connected!', 'error');
+                return;
+            }
+
+            ws = new WebSocket('ws://localhost:8080/ws');
+
+            ws.onopen = () => {
+                log('Connected to server!');
+            };
+
+            ws.onmessage = (e) => {
+                const data = JSON.parse(e.data);
+
+                switch (data.type) {
+                    case 'connected':
+                        myId = data.message;
+                        log('My ID: ' + myId, 'info');
+                        break;
+                    case 'playerJoined':
+                        log('Player joined: ' + data.message, 'info');
+                        updatePlayers(data.players);
+                        break;
+                    case 'playerLeft':
+                        log('Player left: ' + data.message, 'info');
+                        updatePlayers(data.players);
+                        break;
+                    case 'gameState':
+                        updatePlayers(data.players);
+                        break;
+                    default:
+                        log('Received: ' + JSON.stringify(data));
+                }
+            };
+
+            ws.onclose = () => {
+                log('Disconnected from server', 'error');
+                document.getElementById('players').textContent = 'Disconnected';
+            };
+
+            ws.onerror = (e) => {
+                log('Error occurred', 'error');
+            };
+        }
+
+        function join() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected! Click Connect first.', 'error');
+                return;
+            }
+            const msg = { type: 'join', roomId: 'room-123' };
+            ws.send(JSON.stringify(msg));
+            log('Joining room-123...', 'sent');
+        }
+
+        function move(dx, dy) {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('Not connected!', 'error');
+                return;
+            }
+            myX += dx;
+            myY += dy;
+            const msg = { type: 'move', x: myX, y: myY };
+            ws.send(JSON.stringify(msg));
+            log(`Moving to (${myX}, ${myY})`, 'sent');
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+                myId = null;
+                myX = 0;
+                myY = 0;
+            }
+        }
+    </script>
+</body>
+</html>
